@@ -10,6 +10,7 @@ export ModeSolver, fit!, train_mbnn
 export predict_amp, predict_grid, learned_ssp, active_modes
 export load_measurements, load_ssp, split_train_val
 
+#limited Kr with Kr^2 + Kz^2 = (w/c(z))^2. Upper bound 1, lower bound not too low
 const KR_LO_FRAC = 0.02
 const KR_HI_FRAC = 0.999
 
@@ -50,6 +51,9 @@ mutable struct ModeSolver
     loss_weights::Dict{Symbol,Float64}
 end
 
+#outer constructor: D = depth, f = source frequency. Limited number of modes as 6, prevent overfitting.
+#SSP hard clamped - for cold and isothermal case. For adiabetic/warm water, might be better to widen range.
+#SSP & Kr matching achieved smoothly in _unpack
 function ModeSolver(env=nothing; D, f, nmodes::Int=6, nhidden::Int=6,
                     ssp=nothing, cmin=1445.0, cmax=1462.0,
                     ngrid::Int=200, rref=675.0)
