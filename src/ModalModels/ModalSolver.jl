@@ -231,11 +231,26 @@ function _linear_interp_function(zvec, cvec)
 end
 
 function _ssnn_c(pm::ModeSolver, W1, b1, W2, b2, z)
+
+    # Normalize depth into a 0 to 1 range.
+    # z = 0      → surface
+    # z = pm.D   → bottom
     ζ = z / pm.D
+
+    # Start neural network output from the final bias term.
     out = b2
+
+    # One-hidden-layer neural network.
+    # Each hidden neuron takes normalized depth ζ,
+    # applies a linear transform W1[j] * ζ + b1[j], (affine must be done bec scaling)
+    # then passes it through ReLU.
     for j in 1:pm.nhidden
         out += W2[j] * _relu(W1[j] * ζ + b1[j])
     end
+
+    # Convert raw neural network output into a physical sound speed.
+    # sigmoid(out) keeps the value between 0 and 1.
+    # Therefore the final c(z) is forced to stay between cmin and cmax.
     return pm.cmin + (pm.cmax - pm.cmin) * _sigmoid(out)
 end
 
