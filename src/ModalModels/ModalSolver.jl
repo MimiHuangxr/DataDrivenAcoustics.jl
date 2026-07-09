@@ -161,6 +161,7 @@ _relu(x) = max(zero(x), x)
 _complex_abs_smooth(z) = sqrt(real(z)^2 + imag(z)^2 + 1e-12) #added 1e-12 to make sure the sqrt is differentiable.
 _rangefun(pm::ModeSolver, kr, r) = exp(im * kr * (r - pm.rref)) / sqrt(kr * r)
 
+#sum of magnitudes
 function _complex_l1(v)
     s = zero(real(v[1]))
     for x in v
@@ -169,6 +170,7 @@ function _complex_l1(v)
     return s
 end
 
+#accumulated integral at each point on the grid for PHASE, becuse c(z) varies with depth
 function _cumtrapz(g, dz)
     out = similar(g)
     out[1] = zero(eltype(g))
