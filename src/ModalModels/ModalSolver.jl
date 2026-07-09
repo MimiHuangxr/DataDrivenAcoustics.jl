@@ -230,6 +230,7 @@ function _linear_interp_function(zvec, cvec)
     end
 end
 
+#There is one layer + one hiden layer of weights + biases
 function _ssnn_c(pm::ModeSolver, W1, b1, W2, b2, z)
 
     # Normalize depth into a 0 to 1 range.
@@ -272,6 +273,7 @@ end
 
 # theta layout: [A_re; A_im; B_re; B_im; qkr] and, if unknown SSP, then
 # [W1; b1; W2; b2] appended. Returns (A, B, kr, ssnn) with ssnn=nothing if known.
+# no biases appended. physics layer (physics informed), not neural. one hidden layer, one normal layer.
 function _unpack(pm::ModeSolver, theta)
     n = pm.nmodes
     A = theta[1:n] .+ im .* theta[(n + 1):(2n)]
