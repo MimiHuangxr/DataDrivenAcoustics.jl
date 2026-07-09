@@ -180,6 +180,7 @@ function _cumtrapz(g, dz)
     return out
 end
 
+#linear interpolation - calculates mode value at exact RECIEVER depth rather than just d
 function _interp_depth(vals, dz, D, z)
     z <= 0 && return vals[1]
     z >= D && return vals[end]
@@ -189,6 +190,7 @@ function _interp_depth(vals, dz, D, z)
     return (1 - w) * vals[i] + w * vals[i + 1]
 end
 
+#loops through every mode
 function _field_from_profiles(pm::ModeSolver, mode_profiles, kr, dz, r, z)
     acc = zero(eltype(mode_profiles[1]))
     for m in eachindex(kr)
