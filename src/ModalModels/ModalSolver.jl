@@ -191,6 +191,7 @@ function _interp_depth(vals, dz, D, z)
 end
 
 #loops through every mode
+#combines depth shape and hankel range term
 function _field_from_profiles(pm::ModeSolver, mode_profiles, kr, dz, r, z)
     acc = zero(eltype(mode_profiles[1]))
     for m in eachindex(kr)
@@ -317,8 +318,8 @@ function _components(pm::ModeSolver, theta, data, idxs)
     mode_profiles, dz = _build_modes(pm, A, B, kr, cgrid)
     T = eltype(theta)
 
-    L_amp = zero(T)
-    L_log = zero(T)
+    L_amp = zero(T) #ensures overall level is correct
+    L_log = zero(T) #ensures overall range dynamic (like decay) is correct
     for ii in idxs
         pred = _complex_abs_smooth(_field_from_profiles(pm, mode_profiles, kr, dz,
                                                         data.range_m[ii], data.depth_m[ii]))
@@ -327,7 +328,7 @@ function _components(pm::ModeSolver, theta, data, idxs)
         L_log += (log(pred + 1e-8) - log(truth + 1e-8))^2
     end
     L_amp /= length(idxs)
-    L_log /= length(idxs)
+    L_log /= length(idxs) #calculates mean error
 
     L_surface = zero(T)
     for m in 1:pm.nmodes
@@ -391,6 +392,13 @@ function _init_theta(pm::ModeSolver, rng; c_init=(pm.cmin + pm.cmax) / 2)
     end
     return theta
 end
+
+"""
+normalize each term to a target contribution:
+amp → target 0.70 (the dominant fit term)
+log → target 0.30 (secondary fit term)
+everything else → target 1e−3 (the regularizers should be small nudges, not drivers)
+"""
 
 function _auto_balance_unknown!(pm::ModeSolver, theta, train_data, rng; sample_size=256)
     idxs = rand(rng, 1:length(train_data.amp), min(sample_size, length(train_data.amp)))
