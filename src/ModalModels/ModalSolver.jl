@@ -112,6 +112,7 @@ Return `(train, val)` named tuples. If `data.split` exists, rows labelled
 `train`/`val`/`validation` are used accordingly. Otherwise a random validation
 split is used when `val_fraction > 0`; if not, validation equals training.
 """
+#Used MersenneTwister randomnizer, with fixed seed. The paper seemed like it uses a fixed set of training data in all runs.
 function split_train_val(data; val_fraction=0.0, seed=0)
     _check_data(data)
     n = length(data.amp)
@@ -157,7 +158,7 @@ end
 _sigmoid(x) = one(x) / (one(x) + exp(-x))
 _logit(x) = log(x / (1 - x))
 _relu(x) = max(zero(x), x)
-_complex_abs_smooth(z) = sqrt(real(z)^2 + imag(z)^2 + 1e-12)
+_complex_abs_smooth(z) = sqrt(real(z)^2 + imag(z)^2 + 1e-12) #added 1e-12 to make sure the sqrt is differentiable.
 _rangefun(pm::ModeSolver, kr, r) = exp(im * kr * (r - pm.rref)) / sqrt(kr * r)
 
 function _complex_l1(v)
