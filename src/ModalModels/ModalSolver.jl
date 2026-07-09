@@ -1,14 +1,4 @@
 module ModalSolver
-
-# Physics-aided normal-mode acoustic propagation model (MBNN).
-#
-# Optimization uses Julia's standard tooling: Optimisers.jl (the same Adam
-# engine Flux uses under the hood, via `Flux.setup`/`Flux.Adam`). Gradient
-# clipping uses `Optimisers.ClipNorm`, which — because the trainable parameters
-# are a single flat vector — is exactly the global-L2-norm clip used before.
-# To use Flux directly instead, replace `import Optimisers` with `import Flux`
-# and `Optimisers.` with `Flux.` throughout `_train`.
-
 using CSV
 using DataFrames
 using Random
