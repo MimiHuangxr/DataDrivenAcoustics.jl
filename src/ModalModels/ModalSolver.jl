@@ -433,6 +433,7 @@ Common keyword arguments:
 - `epochs`: training epochs per restart
 - `batch_size`: mini-batch size
 - `lr`: learning rate
+Note: lr = 3e-2 is a very suitable selection for data in the /test folder, but user should determine the appropriate lr themselves
 - `restarts`: number of random restarts
 - `val_fraction`: random validation split if data has no `split` column
 - `seed`: reproducibility seed
@@ -442,7 +443,7 @@ function fit!(pm::ModeSolver, data; epochs=2000, batch_size=256, lr=nothing,
               restarts=10, val_fraction=0.0, seed=1000, log_every=250,
               verbose=true, auto_balance=true, kwargs...)
     _check_data(data)
-    train_raw, val_raw = split_train_val(data; val_fraction=val_fraction, seed=seed)
+    train_raw, val_raw = split_train_val(data; val_fraction=val_fraction, seed=seed) #divides training and validation data
     yscale = mean(train_raw.amp)
     yscale > 0 || error("mean training amplitude must be positive")
     pm.yscale = yscale
@@ -458,6 +459,7 @@ function fit!(pm::ModeSolver, data; epochs=2000, batch_size=256, lr=nothing,
     end
 end
 
+#three fit types to allow different types of data
 fit!(pm::ModeSolver, csvfile::AbstractString; kwargs...) =
     fit!(pm, load_measurements(csvfile); kwargs...)
 fit!(pm::ModeSolver, tx, rxs, data; kwargs...) = fit!(pm, data; kwargs...)
@@ -502,6 +504,7 @@ function _train(loss, theta0; epochs, lr, batch_loss, batch_size, ntrain,
     return best_theta, best_val, best_epoch, epoch_hist, train_hist, val_hist
 end
 
+#weights are frozen for known SSP and recalculated/auto-rebalanced for each run. theta0 values are updated.
 function _fit_known_ssp!(pm::ModeSolver, train_data, val_data; epochs, batch_size, lr,
                          restarts, seed, log_every, verbose,
                          λ_amp=1.0, λ_log=0.0, λ_surface=1e-4, α=1e-6, β=1e-6)
@@ -593,6 +596,7 @@ function _require_fitted(pm::ModeSolver)
     isnothing(pm.theta) && error("model has not been fitted yet. Call fit!(pm, data) first.")
     return true
 end
+#fit! determines the values of the theta0 vectors
 
 """
     predict_amp(pm, ranges, depths)
@@ -671,5 +675,6 @@ function active_modes(pm::ModeSolver)
     sort!(df, :amplitude, rev=true)
     return df
 end
+#users are free to save the function/data of SSP, and the dataframe of modes and their strengths by csv.write or else
 
 end # module ModalSolver
