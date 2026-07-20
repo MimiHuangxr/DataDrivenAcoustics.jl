@@ -1,4 +1,4 @@
-module ModalSolverPaper
+module MBNN
 
 using Random
 import Lux
