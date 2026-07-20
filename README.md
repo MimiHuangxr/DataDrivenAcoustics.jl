@@ -602,11 +602,26 @@ parameter CSV, the SSP and AOI prediction CSVs, and the three PNGs.
 After the programme is run, it will display 3 figures, with the first one being Kraken generated 
 ground truth amplitude vs. MBNN learned amplitude:
 <img width="1615" height="532" alt="image" src="https://github.com/user-attachments/assets/1411ff1b-1bb3-4ca7-94dc-23443b162119" />
+
 The second figure overlays the ground truth SSP (obtained from reference paper) with the predicted SSP:
+
 <img width="800" height="532" alt="image" src="https://github.com/user-attachments/assets/abdcb550-55a1-44e3-84db-7d34b100093e" />
+
 The third figure displays the MSE for training and validation field for the rerun：
+
 <img width="800" height="532" alt="image" src="https://github.com/user-attachments/assets/bff702b3-2edb-4917-bf94-60cb80233347" />
 
 
+## Publications
 
+### Primary paper
 
+- K. Li and M. Chitre, "Physics-aided data-driven modal ocean acoustic
+  propagation modeling," in International Congress of Acoustics, 2022.
+
+### Other useful papers
+
+- K. Li and M. Chitre, "Data-aided underwater acoustic ray propagation
+  modeling," 2023.
+- F. B. Jensen, W. A. Kuperman, M. B. Porter, and H. Schmidt, *Computational
+  Ocean Acoustics*, 2nd ed. New York: Springer, 2011.
