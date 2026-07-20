@@ -153,6 +153,37 @@ kr  = horizontal_wavenumbers(model, ps)          # learned kᵣ per mode
 Untrained parameters give a physically valid but arbitrary field — the point
 is to fit `ps` to measurements, which is what the rest of this README does.
 
+# Quick start output
+
+Running the above should produce something close to:
+
+```julia
+julia> amp = amplitude_output(model, ps, st, X)
+3-element Vector{Float32}:
+ 0.004187098
+ 0.002502838
+ 0.0010821978
+
+julia> c = sound_speed_grid(model, ps)
+201-element Vector{Float32}:
+ 1451.2946
+ 1451.2817
+    ⋮
+ 1449.2657
+
+julia> kr = horizontal_wavenumbers(model, ps)
+6-element Vector{Float32}:
+ 2.1633189
+ 2.1533737
+ 2.1366236
+ 2.1128173
+ 2.081619
+ 2.0426033
+```
+
+Exact numbers will differ if you change the RNG seed, `nmodes`, `nhidden`,
+or the environment settings.
+
 # Sample Implementation
 
 This walks through the entire example chunk by chunk. Paste each block into
