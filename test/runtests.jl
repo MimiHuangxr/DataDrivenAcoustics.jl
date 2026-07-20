@@ -26,9 +26,9 @@ DataDrivenAcoustics.fit!(pm, loss; optimizer=BFGS(), maxiters=200)
 
 @test loss(pm.params, nothing) < 5
 
-### Modal Models
+###Modal Models
 
-using Lux, Zygote, Optimisers, Statistics
+using Lux, Zygote, Optimisers
 
 include(joinpath(@__DIR__, "..", "src", "MBNN.jl"))
 using .MBNN
@@ -46,6 +46,7 @@ xamp = Float32.(abs.(acoustic_field(pm, tx, rxs)))
 # model construction and parameter initialisation
 model = ModalBasisNN_2D(D, freq; nmodes=6, nhidden=12, rref=675.0)
 ps, st = Lux.setup(rng, model)
+
 @test model.nmodes == 6
 @test length(model.ζ) == 201
 @test length(ps.A_re) == 6 && length(ps.ssp.W1) == 12
@@ -53,6 +54,7 @@ ps, st = Lux.setup(rng, model)
 # learned sound speed and wavenumbers respect their physical bounds
 c = sound_speed_grid(model, ps)
 kr = horizontal_wavenumbers(model, ps)
+
 @test length(c) == 201
 @test all(model.cmin .< c .< model.cmax)
 @test length(kr) == 6
@@ -61,39 +63,51 @@ kr = horizontal_wavenumbers(model, ps)
 
 # depth interpolation matrix rows are convex weights
 W = depth_interpolation_matrix(model, Float32[0, 1, 2, 3, 4])
+
 @test size(W) == (5, 201)
 @test all(≈(1), sum(W; dims=2))
 @test all(W .>= 0)
 
 # forward pass returns finite real/imaginary pressure
 X = Float32.(vcat(rxpos[1,:]', abs.(rxpos[2,:]')))
-y, _ = model(X, ps, st)
-@test size(y) == (2, size(X, 2))
-@test all(isfinite, y)
+yfield, _ = model(X, ps, st)
+
+@test size(yfield) == (2, size(X, 2))
+@test all(isfinite, yfield)
 
 # amplitude output is non-negative and consistent with the forward pass
 amp = amplitude_output(model, ps, st, X)
+
 @test length(amp) == size(X, 2)
 @test all(isfinite, amp)
 @test all(amp .>= 0)
-@test amp ≈ hypot.(y[1,:], y[2,:])
+@test amp ≈ hypot.(yfield[1,:], yfield[2,:])
 
-# train briefly and check the loss decreases
-yscale = mean(Float64.(xamp))
-y_train = Float32.(xamp ./ yscale)
-objective(p) = mean(abs2, amplitude_output(model, p, st, X) ./ Float32(yscale) .- y_train)
-initial_loss = objective(ps)
-opt_state = Optimisers.setup(OptimiserChain(ClipNorm(100.0), Adam(1f-3)), ps)
-for _ ∈ 1:300
-  loss, grads = Zygote.withgradient(objective, ps)
-  @test isfinite(loss)
-  opt_state, ps = Optimisers.update(opt_state, ps, grads[1])
+# train briefly and check the loss decreases; the loop lives in a function so
+# the parameter updates are not lost to soft scope
+function train_mbnn(model, ps, st, X, xamp; iters=300)
+  yscale = Float32(mean(Float64.(xamp)))
+  y_train = xamp ./ yscale
+  objective(p) = mean(abs2, amplitude_output(model, p, st, X) ./ yscale .- y_train)
+  initial_loss = objective(ps)
+  opt_state = Optimisers.setup(
+    Optimisers.OptimiserChain(Optimisers.ClipNorm(100.0), Optimisers.Adam(1f-3)), ps)
+  for _ ∈ 1:iters
+    l, grads = Zygote.withgradient(objective, ps)
+    isfinite(l) || error("non-finite loss during MBNN training")
+    opt_state, ps = Optimisers.update(opt_state, ps, grads[1])
+  end
+  ps, initial_loss, objective(ps)
 end
-final_loss = objective(ps)
+
+ps, initial_loss, final_loss = train_mbnn(model, ps, st, X, xamp)
+
+@test isfinite(initial_loss)
 @test isfinite(final_loss)
 @test final_loss < initial_loss
 
 # the sound speed profile stays physical after training
 c_trained = sound_speed_grid(model, ps)
+
 @test all(model.cmin .< c_trained .< model.cmax)
 @test maximum(c_trained) - minimum(c_trained) < 100f0
