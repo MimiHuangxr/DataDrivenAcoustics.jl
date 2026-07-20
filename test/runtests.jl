@@ -26,96 +26,74 @@ DataDrivenAcoustics.fit!(pm, loss; optimizer=BFGS(), maxiters=200)
 
 @test loss(pm.params, nothing) < 5
 
-###Modal Models
+### Modal Models
 
-include(joinpath(@__DIR__, "..", "ModalSolver.jl"))
-using .ModalSolver
+using Lux, Zygote, Optimisers, Statistics
 
-rmse(a, b) = sqrt(mean((a .- b).^2))
+include(joinpath(@__DIR__, "..", "src", "MBNN.jl"))
+using .MBNN
 
-@testset "Known SSP baseline regression test" begin
+# prepare dataset from a known Pekeris environment
+rng = StableRNG(1224)
+D, freq = 25.0, 500.0
+env = UnderwaterEnvironment(bathymetry=D, soundspeed=1500.0, seabed=SandyClay)
+pm = PekerisModeSolver(env; nmodes=6)
+tx = AcousticSource(0.0, -5.0, freq)
+rxpos = rand(rng, 2, 200) .* [50.0, 22.0] .+ [650.0, -23.0]
+rxs = [AcousticReceiver(rxpos[1,i], rxpos[2,i]) for i ∈ 1:size(rxpos,2)]
+xamp = Float32.(abs.(acoustic_field(pm, tx, rxs)))
 
-  meas_file = joinpath(@__DIR__, "ssnn_profiles_1224.csv")
-  ssp_file = joinpath(@__DIR__, "true_ssnn_ssp.csv")
+# model construction and parameter initialisation
+model = ModalBasisNN_2D(D, freq; nmodes=6, nhidden=12, rref=675.0)
+ps, st = Lux.setup(rng, model)
+@test model.nmodes == 6
+@test length(model.ζ) == 201
+@test length(ps.A_re) == 6 && length(ps.ssp.W1) == 12
 
-  RMSE_LIMIT = 2.0
-  SEED = 1224
+# learned sound speed and wavenumbers respect their physical bounds
+c = sound_speed_grid(model, ps)
+kr = horizontal_wavenumbers(model, ps)
+@test length(c) == 201
+@test all(model.cmin .< c .< model.cmax)
+@test length(kr) == 6
+@test all(model.klo .< kr .< model.khi)
+@test issorted(kr; rev=true)
 
-  # baseline input files exist
-  @testset "1. Baseline input files exist" begin
-    @test isfile(meas_file)
-    @test isfile(ssp_file)
-  end
+# depth interpolation matrix rows are convex weights
+W = depth_interpolation_matrix(model, Float32[0, 1, 2, 3, 4])
+@test size(W) == (5, 201)
+@test all(≈(1), sum(W; dims=2))
+@test all(W .>= 0)
 
-  # known SSP CSV loads correctly
-  ssp = load_ssp(ssp_file)
+# forward pass returns finite real/imaginary pressure
+X = Float32.(vcat(rxpos[1,:]', abs.(rxpos[2,:]')))
+y, _ = model(X, ps, st)
+@test size(y) == (2, size(X, 2))
+@test all(isfinite, y)
 
-  @testset "2. Known SSP loading works" begin
-    @test length(ssp[1]) == length(ssp[2])
-    @test all(isfinite, ssp[1])
-    @test all(isfinite, ssp[2])
-  end
+# amplitude output is non-negative and consistent with the forward pass
+amp = amplitude_output(model, ps, st, X)
+@test length(amp) == size(X, 2)
+@test all(isfinite, amp)
+@test all(amp .>= 0)
+@test amp ≈ hypot.(y[1,:], y[2,:])
 
-  # known-SSP solver can be constructed
-  pm = ModeSolver(D = 25.0, f = 500.0, ssp = ssp)
-
-  @testset "3. Known-SSP solver construction works" begin
-    @test pm.D == 25.0
-    @test pm.f == 500.0
-    @test pm.ssp !== nothing
-  end
-
-  # training runs without crashing
-  @testset "4. Known-SSP training runs" begin
-    fit!(pm, meas_file; restarts = 10, seed = SEED)
-    @test pm.theta !== nothing
-    @test !isempty(pm.history)
-  end
-
-  # prediction returns valid amplitudes
-  df = CSV.read(meas_file, DataFrame)
-  pred = predict_amp(pm, df.range_m, df.depth_m)
-
-  @testset "5. Prediction output is valid" begin
-    @test length(pred) == nrow(df)
-    @test all(isfinite, pred)
-    @test all(pred .>= 0)
-  end
-
-  # main regression test for the known-SSP reproduction
-  measurement_rmse = rmse(pred, df.amp)
-
-  @testset "6. Baseline RMSE stays below threshold" begin
-    @test measurement_rmse < RMSE_LIMIT
-  end
-
-  # training log contains finite losses
-  @testset "7. Loss history is valid" begin
-    @test "epoch" in names(pm.history)
-    @test "train_loss" in names(pm.history)
-    @test "val_loss" in names(pm.history)
-    @test all(isfinite, pm.history.train_loss)
-    @test all(isfinite, pm.history.val_loss)
-    @test length(pm.history.val_loss) >= 2
-  end
-
-  # loss may bounce, but the best validation loss should be lower
-  # than the first logged validation loss
-  @testset "8. Validation loss improves overall" begin
-    first_val_loss = first(pm.history.val_loss)
-    best_val_loss = minimum(pm.history.val_loss)
-    @test best_val_loss <= first_val_loss
-  end
-
-  # checks that the training process records the least loss; does not
-  # recompute the internal loss manually, so it is more stable for CI
-  @testset "9. Least validation loss is recorded" begin
-    val_losses = pm.history.val_loss
-    best_val_loss = minimum(val_losses)
-    best_epoch_idx = argmin(val_losses)
-    @test isfinite(best_val_loss)
-    @test best_epoch_idx >= 1
-    @test best_epoch_idx <= length(val_losses)
-    @test best_val_loss <= first(val_losses)
-  end
+# train briefly and check the loss decreases
+yscale = mean(Float64.(xamp))
+y_train = Float32.(xamp ./ yscale)
+objective(p) = mean(abs2, amplitude_output(model, p, st, X) ./ Float32(yscale) .- y_train)
+initial_loss = objective(ps)
+opt_state = Optimisers.setup(OptimiserChain(ClipNorm(100.0), Adam(1f-3)), ps)
+for _ ∈ 1:300
+  loss, grads = Zygote.withgradient(objective, ps)
+  @test isfinite(loss)
+  opt_state, ps = Optimisers.update(opt_state, ps, grads[1])
 end
+final_loss = objective(ps)
+@test isfinite(final_loss)
+@test final_loss < initial_loss
+
+# the sound speed profile stays physical after training
+c_trained = sound_speed_grid(model, ps)
+@test all(model.cmin .< c_trained .< model.cmax)
+@test maximum(c_trained) - minimum(c_trained) < 100f0
