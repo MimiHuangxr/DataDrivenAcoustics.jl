@@ -9,6 +9,7 @@ import Zygote
 
 export ModalBasisNN_2D
 export sound_speed_grid, horizontal_wavenumbers, amplitude_output
+export depth_interpolation_matrix
 
 """
     ModalBasisNN_2D(D, f; nmodes=30, nhidden=32, cmin=1400.0, cmax=1500.0,
@@ -134,7 +135,7 @@ function (l::ModalBasisNN_2D)(inp::AbstractMatrix, ps, st::NamedTuple)
   ψre = invsqrt_kz .* ((A_re .+ B_re) .* cosφ .+ (B_im .- A_im) .* sinφ)
   ψim = invsqrt_kz .* ((A_im .+ B_im) .* cosφ .+ (A_re .- B_re) .* sinφ)
   Wdepth = Zygote.ignore() do
-    _depth_interpolation_matrix(l, d)
+    depth_interpolation_matrix(l, d)
   end
   Dre, Dim = Wdepth * ψre, Wdepth * ψim
   range_phase = (r_safe .- l.rref) .* reshape(kr, 1, :)
@@ -154,6 +155,26 @@ Run the forward pass and return the pressure amplitude |p| at each input
 function amplitude_output(l::ModalBasisNN_2D, ps, st, inp)
   y, _ = l(inp, ps, st)
   hypot.(y[1, :], y[2, :])
+end
+
+"""
+    depth_interpolation_matrix(l::ModalBasisNN_2D, depths)
+
+Return a length(depths) × ngrid linear interpolation matrix that evaluates
+functions on the model depth grid at arbitrary depths (e.g. SSP anchors).
+"""
+function depth_interpolation_matrix(l::ModalBasisNN_2D, depths)
+  d = Float32.(collect(depths))
+  n = length(l.ζ)
+  W = zeros(Float32, length(d), n)
+  for (row, z) in enumerate(d)
+    x = clamp(z / l.dz, 0f0, Float32(n - 1))
+    i0 = min(floor(Int, x), n - 2)
+    w = x - Float32(i0)
+    W[row, i0 + 1] = 1f0 - w
+    W[row, i0 + 2] = w
+  end
+  W
 end
 
 ## private methods
@@ -180,21 +201,6 @@ function _pekeris_kr(l::ModalBasisNN_2D)
   # kr depends only on the environment, not on tx/rx positions
   modes = UA.arrivals(pm, tx, rx)
   Float32[clamp(Float32(real(m.kᵣ)), l.klo, l.khi) for m in modes]
-end
-
-# linear interpolation matrix evaluating grid functions at receiver depths
-function _depth_interpolation_matrix(l::ModalBasisNN_2D, depths)
-  d = Float32.(collect(depths))
-  n = length(l.ζ)
-  W = zeros(Float32, length(d), n)
-  for (row, z) in enumerate(d)
-    x = clamp(z / l.dz, 0f0, Float32(n - 1))
-    i0 = min(floor(Int, x), n - 2)
-    w = x - Float32(i0)
-    W[row, i0 + 1] = 1f0 - w
-    W[row, i0 + 2] = w
-  end
-  W
 end
 
 end
