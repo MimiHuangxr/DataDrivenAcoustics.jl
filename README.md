@@ -206,8 +206,8 @@ The MBNN + SSNN model lives in its own module. This makes `ModalBasisNN_2D`,
 `depth_interpolation_matrix` available:
 
 ```julia
-include(joinpath(@__DIR__, "ModalSolver_paper_ssnn.jl"))
-using .ModalSolverPaper
+include(joinpath(@__DIR__, "MBNN.jl"))
+using .MBNN
 ```
 
 ## 3. File names
