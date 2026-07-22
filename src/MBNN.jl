@@ -1,12 +1,3 @@
-module MBNN
-
-using Random
-import Lux
-import Lux: LuxCore, sigmoid
-import LogExpFunctions: logit
-import UnderwaterAcoustics as UA
-import Zygote
-
 export ModalBasisNN_2D
 export sound_speed_grid, horizontal_wavenumbers, amplitude_output
 export depth_interpolation_matrix
@@ -201,6 +192,4 @@ function _pekeris_kr(l::ModalBasisNN_2D)
   # kr depends only on the environment, not on tx/rx positions
   modes = UA.arrivals(pm, tx, rx)
   Float32[clamp(Float32(real(m.kᵣ)), l.klo, l.khi) for m in modes]
-end
-
 end
