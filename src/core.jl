@@ -10,7 +10,7 @@ import Random
 import Lux
 import Lux: LuxCore, sigmoid
 import LogExpFunctions: logit
-import Zygote
+import ChainRulesCore
 
 export DataDrivenPropagationModel, TransmissionLossMSE
 export Adam, BFGS, LBFGS
