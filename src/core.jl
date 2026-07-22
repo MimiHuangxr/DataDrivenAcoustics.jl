@@ -1,4 +1,5 @@
 using UnderwaterAcoustics
+using Random
 import UnderwaterAcoustics: AbstractPropagationModel, AbstractAcousticSource, AbstractAcousticReceiver
 import ComponentArrays: ComponentArray
 import Optimization: OptimizationFunction, OptimizationProblem, solve, AutoReverseDiff
@@ -7,6 +8,9 @@ import OptimizationOptimJL: BFGS, LBFGS
 import ReverseDiff
 import Random
 import Lux
+import Lux: LuxCore, sigmoid
+import LogExpFunctions: logit
+import Zygote
 
 export DataDrivenPropagationModel, TransmissionLossMSE
 export Adam, BFGS, LBFGS
