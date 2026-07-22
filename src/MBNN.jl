@@ -180,16 +180,16 @@ _kgrid(l::ModalBasisNN_2D, ps) = l.ω ./ sound_speed_grid(l, ps)
 # warm-start kr; only called at initialization, the SSNN takes over afterwards
 function _pekeris_kr(l::ModalBasisNN_2D)
   f = Float64(l.ω) / (2π)
-  env = UA.UnderwaterEnvironment(
+  env = UnderwaterEnvironment(
     bathymetry = Float64(l.D),
     soundspeed = Float64(l.cinit),
     density = 1000.0,
-    seabed = UA.FluidBoundary(2700.0, 5000.0),  # hard rock-like halfspace; swap for actual seabed
+    seabed = FluidBoundary(2700.0, 5000.0),  # hard rock-like halfspace; swap for actual seabed
   )
-  pm = UA.PekerisModeSolver(env; nmodes=l.nmodes)
-  tx = UA.AcousticSource(0.0, -Float64(l.D) / 2, f)
-  rx = UA.AcousticReceiver(Float64(l.rref), -Float64(l.D) / 2)
+  pm = PekerisModeSolver(env; nmodes=l.nmodes)
+  tx = AcousticSource(0.0, -Float64(l.D) / 2, f)
+  rx = AcousticReceiver(Float64(l.rref), -Float64(l.D) / 2)
   # kr depends only on the environment, not on tx/rx positions
-  modes = UA.arrivals(pm, tx, rx)
+  modes = arrivals(pm, tx, rx)
   Float32[clamp(Float32(real(m.kᵣ)), l.klo, l.khi) for m in modes]
 end
