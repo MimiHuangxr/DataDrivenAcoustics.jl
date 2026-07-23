@@ -98,9 +98,16 @@ source `tx`. The `sparsity` parameter controls the L1 regularization strength
 on the modal amplitude coefficients to promote sparsity in the solution.
 """
 function FieldAmplitudeMSE(pm::DataDrivenPropagationModel, tx::AbstractAcousticSource, rxs::AbstractArray{<:AbstractAcousticReceiver}, data; sparsity=10f0)
-  let tx = tx, rxs = rxs, data = data, sparsity = sparsity
-    (ps, _) -> sum(abs2, abs.(acoustic_field(pm(ps), tx, rxs)) - data) +
-               sparsity * (sum(abs, ps.A_re) + sum(abs, ps.A_im) +
-                           sum(abs, ps.B_re) + sum(abs, ps.B_im))
+  f = frequency(tx)
+  p = vec(location.(rxs))
+  k = 2f0 * π * f / pm.c
+  inp = permutedims(Float32[getfield.(p, :x) getfield.(p, :z) fill(k, length(p))])
+  let inp = inp, model = pm.model, data = data, sparsity = sparsity
+    (ps, _) -> begin
+      out = Lux.LuxCore.stateless_apply(model, inp, ps)
+      amp = hypot.(out[1, :], out[2, :])
+      sum(abs2, amp - data) + sparsity * (sum(abs, ps.A_re) + sum(abs, ps.A_im) +
+                                          sum(abs, ps.B_re) + sum(abs, ps.B_im))
+    end
   end
 end
