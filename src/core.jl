@@ -1,5 +1,4 @@
 using UnderwaterAcoustics
-using Random
 import UnderwaterAcoustics: AbstractPropagationModel, AbstractAcousticSource, AbstractAcousticReceiver
 import ComponentArrays: ComponentArray
 import Optimization: OptimizationFunction, OptimizationProblem, solve, AutoReverseDiff
