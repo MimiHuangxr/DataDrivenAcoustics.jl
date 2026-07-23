@@ -4,7 +4,7 @@
 
 This package also provides physics-based data-driven acoustic propagation models for use with UnderwaterAcoustics.jl. Two model families are currently available: a ray-basis neural network (RBNN) for deep and mid-water propagation, and a modal-basis neural network (MBNN) for shallow-water waveguides, which additionally inverts for the sound-speed profile.
 
-This package first builts upon the ideas discussed in our journal paper "Data-Aided Underwater Acoustic Ray Propagation Modeling" published on IEEE Journal of Oceanic Engineering (available [online](https://ieeexplore.ieee.org/abstract/document/10224658)). It provides a Ray-basis neural network implementation for use with [`UnderwaterAcoustics.jl`](https://github.com/org-arl/UnderwaterAcoustics.jl).
+This package first builds upon the ideas discussed in our journal paper "Data-Aided Underwater Acoustic Ray Propagation Modeling" published on IEEE Journal of Oceanic Engineering (available [online](https://ieeexplore.ieee.org/abstract/document/10224658)). It provides a Ray-basis neural network implementation for use with [`UnderwaterAcoustics.jl`](https://github.com/org-arl/UnderwaterAcoustics.jl).
 
 This package also builds upon the ideas discussed in our journal paper "Physics-Aided Data-Driven Modal Ocean Acoustic Propagation Modeling", (available [online](https://arl.nus.edu.sg/wp-content/uploads/2022/09/Kexin_Physics-aided_ICAKorea2022.pdf)). It provides a Modal-basis neural network implementation for use with [`UnderwaterAcoustics.jl`](https://github.com/org-arl/UnderwaterAcoustics.jl).
 
@@ -20,7 +20,7 @@ julia> # press ]
 pkg> add UnderwaterAcoustics, DataDrivenAcoustics
 ```
 
-## Usage
+## Ray Models
 
 We first start by loading some helpful dependencies:
 ```julia
@@ -83,8 +83,10 @@ scatter!([p for p ∈ zip(rxpos[1,:], rxpos[2,:])]; markersize=0.5, color=:black
 
 While we see that the match is not perfect, it is pretty impressive given that we have no measurements in the extrapolated area!
 
+## Modal Models
+
 ## Publications
-### Primary paper
+### Primary papers
 
 - K. Li and M. Chitre, “Data-aided underwater acoustic ray propagation modeling,” 2023. [(online)](https://ieeexplore.ieee.org/abstract/document/10224658)
 - K. Li and M. Chitre, "Physics-aided data-driven modal ocean acoustic
