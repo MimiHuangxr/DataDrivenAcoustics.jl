@@ -110,7 +110,9 @@ horizontal_wavenumbers(l::ModalBasisNN_2D, ps) =
 function (l::ModalBasisNN_2D)(inp::AbstractMatrix, ps, st::NamedTuple)
   size(inp, 1) == 3 || error("input must have at least two rows: range and depth")
   r = @view inp[1, :]
-  d = abs.(@view inp[2, :])
+  z = @view inp[2, :]
+  all(z .<= 0f0) || error("depths must satisfy z ≤ 0 (negative below the surface)")
+  d = -z
   r_safe = max.(r, 1f-3)
   kr = horizontal_wavenumbers(l, ps)
   k = _kgrid(l, ps)
