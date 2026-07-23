@@ -1,13 +1,9 @@
-export ModalBasisNN_2D
-export sound_speed_grid, horizontal_wavenumbers, amplitude_output
-export depth_interpolation_matrix
-
 """
     ModalBasisNN_2D(D, f; nmodes=30, nhidden=32, cmin=1400.0, cmax=1500.0,
                     cinit=1450.0, ngrid=201, rref=675.0)
 
 A 2D modal-basis neural network layer for waveguide depth `D` (m) and source
-frequency `f` (Hz). Calling the layer with a 2×N input matrix of ranges (row 1)
+frequency `f` (Hz). Calling the layer with a 3×N input matrix of ranges (row 1)
 and depths (row 2) returns a 2×N matrix of real and imaginary acoustic pressure.
 
 Fields:
@@ -28,10 +24,12 @@ struct ModalBasisNN_2D <: LuxCore.AbstractLuxLayer
   cmin::Float32; cmax::Float32; cinit::Float32
   ζ::Vector{Float32}
   klo::Float32; khi::Float32
+  cref::Float32
 end
 
 function ModalBasisNN_2D(D, f; nmodes::Int=30, nhidden::Int=32, cmin=1400.0,
-                         cmax=1500.0, cinit=1450.0, ngrid::Int=201, rref=675.0)
+                         cmax=1500.0, cinit=1450.0, ngrid::Int=201, rref=675.0,
+                         cref=soundspeed())
   nmodes > 0 || error("nmodes must be positive")
   nhidden > 0 || error("nhidden must be positive for unknown-SSP training")
   # at least 3 points needed since interpolation uses neighboring depth points
@@ -47,8 +45,10 @@ function ModalBasisNN_2D(D, f; nmodes::Int=30, nhidden::Int=32, cmin=1400.0,
   dz = D32 / Float32(ngrid - 1)
   kmax = ω / cmin32
   klo, khi = 0.02f0 * kmax, 0.999f0 * kmax
+  cref32 = Float32(cref)
+  cref32 > 0 || error("cref must be positive")
   ModalBasisNN_2D(nmodes, nhidden, D32, Float32(rref), dz, ω,
-                  cmin32, cmax32, cinit32, ζ, klo, khi)
+                  cmin32, cmax32, cinit32, ζ, klo, khi, cref32)
 end
 
 ## interface methods
@@ -108,7 +108,7 @@ horizontal_wavenumbers(l::ModalBasisNN_2D, ps) =
   l.klo .+ (l.khi - l.klo) .* sigmoid.(ps.qkr)
 
 function (l::ModalBasisNN_2D)(inp::AbstractMatrix, ps, st::NamedTuple)
-  size(inp, 1) == 3 || error("input must have at least two rows: range and depth")
+  size(inp, 1) == 3 || error("input must have exactly 3 rows [x; z; k]; got $(size(inp, 1))")
   r = @view inp[1, :]
   z = @view inp[2, :]
   all(z .<= 0f0) || error("depths must satisfy z ≤ 0 (negative below the surface)")
