@@ -1,10 +1,11 @@
 """
-    ModalBasisNN_2D(D, f; nmodes=30, nhidden=32, cmin=1400.0, cmax=1500.0,
-                    cinit=1450.0, ngrid=201, rref=675.0)
+ModalBasisNN_2D(D, f; nmodes=30, nhidden=32, cmin=1400.0, cmax=1500.0,
+                    cinit=1450.0, ngrid=201, rref=675.0, cref=soundspeed())
 
 A 2D modal-basis neural network layer for waveguide depth `D` (m) and source
-frequency `f` (Hz). Calling the layer with a 3×N input matrix of ranges (row 1)
-and depths (row 2) returns a 2×N matrix of real and imaginary acoustic pressure.
+frequency `f` (Hz). Calling the layer with a 3×N input matrix of ranges (row 1),
+depths (row 2, negative below the surface) and wavenumbers (row 3) returns a
+2×N matrix of real and imaginary acoustic pressure.
 
 Fields:
 - `nmodes`: cap on the number of modes the model can use
