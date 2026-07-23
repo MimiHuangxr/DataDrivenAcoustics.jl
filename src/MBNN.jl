@@ -108,7 +108,7 @@ horizontal_wavenumbers(l::ModalBasisNN_2D, ps) =
   l.klo .+ (l.khi - l.klo) .* sigmoid.(ps.qkr)
 
 function (l::ModalBasisNN_2D)(inp::AbstractMatrix, ps, st::NamedTuple)
-  size(inp, 1) >= 2 || error("input must have at least two rows: range and depth")
+  size(inp, 1) >= 3 || error("input must have at least two rows: range and depth")
   r = @view inp[1, :]
   d = abs.(@view inp[2, :])
   r_safe = max.(r, 1f-3)
