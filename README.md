@@ -85,6 +85,11 @@ While we see that the match is not perfect, it is pretty impressive given that w
 
 ## Modal Models
 
+Similarly, we implement the same method for Modal Models. We should get the image of:
+/input pics
+Compared with the ground truth:
+
+
 ## Publications
 ### Primary papers
 
