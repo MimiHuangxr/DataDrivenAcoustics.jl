@@ -18,6 +18,8 @@ Fields:
 - `cinit`: initial sound-speed guess (m/s)
 - `ζ`: normalized depth grid, ζ = z/D ∈ [0, 1]
 - `klo`, `khi`: horizontal wavenumber bounds (rad/m)
+- `cref`: reference sound speed used to interpret row 3; must match the
+  `soundspeed` given to `DataDrivenPropagationModel`
 """
 struct ModalBasisNN_2D <: LuxCore.AbstractLuxLayer
   nmodes::Int; nhidden::Int
