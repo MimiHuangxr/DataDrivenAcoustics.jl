@@ -113,6 +113,7 @@ function (l::ModalBasisNN_2D)(inp::AbstractMatrix, ps, st::NamedTuple)
   z = @view inp[2, :]
   all(z .<= 0f0) || error("depths must satisfy z ≤ 0 (negative below the surface)")
   d = -z
+  _check_frequency(l, @view inp[3, :])
   r_safe = max.(r, 1f-3)
   kr = horizontal_wavenumbers(l, ps)
   k = _kgrid(l, ps)
@@ -194,4 +195,16 @@ function _pekeris_kr(l::ModalBasisNN_2D)
   # kr depends only on the environment, not on tx/rx positions
   modes = arrivals(pm, tx, rx)
   Float32[clamp(Float32(real(m.kᵣ)), l.klo, l.khi) for m in modes]
+end
+
+function _check_frequency(l::ModalBasisNN_2D, k)
+  ktarget = l.ω / l.cref
+  atol = 1f-3 * ktarget
+  if !all(abs.(k .- ktarget) .<= atol)
+    j = argmax(abs.(k .- ktarget))
+    fq = Float32(k[j]) * l.cref / (2f0 * Float32(pi))
+    error("ModalBasisNN_2D was built for $(l.ω / (2f0 * Float32(pi))) Hz " *
+          "but queried at $(fq) Hz")
+  end
+  nothing
 end
