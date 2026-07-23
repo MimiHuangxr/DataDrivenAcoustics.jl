@@ -12,7 +12,7 @@ import Lux: LuxCore, sigmoid
 import LogExpFunctions: logit
 import ChainRulesCore
 
-export DataDrivenPropagationModel, TransmissionLossMSE
+export DataDrivenPropagationModel, TransmissionLossMSE, FieldAmplitudeMSE
 export Adam, BFGS, LBFGS
 public fit!
 
