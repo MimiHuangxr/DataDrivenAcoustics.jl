@@ -85,3 +85,20 @@ function TransmissionLossMSE(pm::DataDrivenPropagationModel, tx::AbstractAcousti
     (ps, _) -> sum(abs2, transmission_loss(pm(ps), tx, rxs) - data) + sparsity * sum(abs, ps.A)
   end
 end
+
+"""
+    FieldAmplitudeMSE(pm, tx, rxs, data; sparsity=10f0)
+
+Loss function for fitting a modal data-driven propagation model `pm` (e.g. one
+wrapping a [`ModalBasisNN_2D`](@ref)) to observed field amplitude data `data`
+measured at receivers `rxs`. The frequency of operation is determined by the
+source `tx`. The `sparsity` parameter controls the L1 regularization strength
+on the modal amplitude coefficients to promote sparsity in the solution.
+"""
+function FieldAmplitudeMSE(pm::DataDrivenPropagationModel, tx::AbstractAcousticSource, rxs::AbstractArray{<:AbstractAcousticReceiver}, data; sparsity=10f0)
+  let tx = tx, rxs = rxs, data = data, sparsity = sparsity
+    (ps, _) -> sum(abs2, abs.(acoustic_field(pm(ps), tx, rxs)) - data) +
+               sparsity * (sum(abs, ps.A_re) + sum(abs, ps.A_im) +
+                           sum(abs, ps.B_re) + sum(abs, ps.B_im))
+  end
+end
