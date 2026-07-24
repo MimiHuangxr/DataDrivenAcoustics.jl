@@ -131,13 +131,14 @@ x = transmission_loss(pm, tx, rx)
 plot(rx, x; xlims=(1000,4000), ylims=(-195,-5))
 scatter!([p for p ∈ zip(rxpos[1,:], rxpos[2,:])]; markersize=0.5, color=:black)
 ```
-
+![](docs/images/ex2.png)
 
 ```julia
 x = transmission_loss(pm1, tx, rx)
 plot(rx, x; xlims=(1000,4000), ylims=(-195,-5))
 scatter!([p for p ∈ zip(rxpos[1,:], rxpos[2,:])]; markersize=0.5, color=:black)
 ```
+![](docs/images/ex2-gt.png)
 
 Unlike the ray model, the modal parameters are physically meaningful, so the trained model also gives us the inverted sound-speed profile and the per-mode horizontal wavenumbers:
 ```julia
