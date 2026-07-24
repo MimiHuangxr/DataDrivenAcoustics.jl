@@ -13,7 +13,7 @@ import ChainRulesCore
 
 export DataDrivenPropagationModel, TransmissionLossMSE, FieldAmplitudeMSE
 export ModalBasisNN_2D
-export sound_speed_grid, horizontal_wavenumbers, amplitude_output
+export sound_speed_grid, horizontal_wavenumbers
 export depth_interpolation_matrix
 export Adam, BFGS, LBFGS
 public fit!
