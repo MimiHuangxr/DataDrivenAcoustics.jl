@@ -30,29 +30,27 @@ extrapolation possible.
 Outputs land next to the script: a training-history CSV showing the best run's MSE, the flattened trained
 parameters, SSP and field prediction CSVs, and three plots.
 
-
 ## 1. Load packages
 
+The MBNN model is part of `DataDrivenAcoustics`, so `ModalBasisNN_2D`,
+`sound_speed_grid`, `horizontal_wavenumbers`, and `depth_interpolation_matrix`
+come in with the package. `AcousticsToolbox` provides Kraken for the ground
+truth, and `StableRNGs` keeps the run reproducible:
+
 ```julia
-using CSV, DataFrames, Random, Statistics, LinearAlgebra, Plots
+using UnderwaterAcoustics
+using DataDrivenAcoustics
+using AcousticsToolbox
+using StableRNGs
+using Plots
+
+using CSV, DataFrames, Statistics, LinearAlgebra
 using Lux, Zygote, Optimisers, ProgressMeter
-using UnderwaterAcoustics, AcousticsToolbox
 
 gr() #plots backend
 ```
 
-## 2. Load the modal solver
-
-The MBNN + SSNN model lives in its own module. This makes `ModalBasisNN_2D`,
-`sound_speed_grid`, `horizontal_wavenumbers`, `amplitude_output`, and
-`depth_interpolation_matrix` available:
-
-```julia
-include(joinpath(@__DIR__, "MBNN.jl"))
-using .MBNN
-```
-
-## 3. File names
+## 2. File names
 
 Every file the example touches is declared up front as a constant, and all of
 them live next to the script (`@__DIR__`). They fall into four groups:
@@ -102,7 +100,7 @@ const HISTORY_PLOT_FILE  = "paper_ssnn_training_history.png"
 const FORCE_REGENERATE_GROUND_TRUTH = true
 ```
 
-## 4. Settings
+## 3. Settings
 
 Environment, model size, training budget, and loss weights. The loss is the
 paper's eqn. 22 (field error + L1 on the modal coefficients) plus an SSP
@@ -132,17 +130,18 @@ const LAMBDA_SSP = 20.0f0
 const LAMBDA_SPAN = 1.0f0
 ```
 
-## 5. Helpers
+## 4. Helpers
 
 Small utilities used throughout — flattening parameter trees, building the
-2 × N model input, the smoothed complex L1, and the reference-SSP loader
+3 × N model input, the smoothed complex L1, and the reference-SSP loader
 (`SampledField` acts as a 1-D linear interpolator on depth):
 
 ```julia
 save_plot(plt, f) = (display(plt); savefig(plt, joinpath(@__DIR__, f)); println("Saved: ", joinpath(@__DIR__, f)))
 flat(x)          = Optimisers.destructure(x)[1]   # numeric array leaves of any param/grad tree
 allfinite(x)     = all(isfinite, flat(x))
-make_input(r, d)   = Float32.(vcat(r', d'))       # 2 x N (range; depth)
+const CREF = 1538.9236f0 
+make_input(r, d) = Float32.(vcat(r', -abs.(d)', fill(2f0*π*FREQ/CREF, 1, length(r))))
 l1_complex(re, im) = sum(sqrt.(re .^ 2 .+ im .^ 2 .+ 1f-12)) #smoothed so the gradient exists at 0
 
 function load_reference_ssp()
@@ -152,7 +151,7 @@ function load_reference_ssp()
 end
 ```
 
-## 6. Kraken data generation
+## 5. Kraken data generation
 
 Defines the synthetic ground truth: one Kraken run on a receiver grid
 (`sample_field`), full generation of the AOI grid plus the 1,224 measurement
@@ -207,7 +206,7 @@ function ensure_ground_truth()
 end
 ```
 
-## 7. Generate the data
+## 6. Generate the data
 
 Run it:
 
@@ -216,7 +215,7 @@ ensure_ground_truth()
 z_ref, c_ref, ref_ssp = load_reference_ssp()
 ```
 
-## 8. Load the measurements and build the training inputs
+## 7. Load the measurements and build the training inputs
 
 The train/validation split comes from the CSV itself; amplitudes are
 normalized by the mean training amplitude:
@@ -237,7 +236,7 @@ y_train = Float32.(train_df.amp ./ yscale)
 y_val   = Float32.(val_df.amp ./ yscale)
 ```
 
-## 9. Build the model and SSP anchors
+## 8. Build the model and SSP anchors
 
 Construct the MBNN and the fixed interpolation matrix that reads the model's
 c(z) at the five anchor depths; users are free to edit the parameters:
@@ -251,7 +250,7 @@ c_anchor_true = Float32.(ref_ssp.(Float64.(SSP_ANCHOR_DEPTHS)))
 W_anchor = depth_interpolation_matrix(model, SSP_ANCHOR_DEPTHS)
 ```
 
-## 10. Define the loss
+## 9. Define the loss
 
 Eqn. 22 pieces plus the two SSP terms, computed once and reused for logging:
 
@@ -273,7 +272,7 @@ total(c) = c.field + ALPHA * c.A + BETA * c.B + LAMBDA_SSP * c.ssp + LAMBDA_SPAN
 objective(ps, st, X, y) = total(components(ps, st, X, y))
 ```
 
-## 11. Train
+## 10. Train
 
 Random restarts with minibatch Adam, gradient clipping, NaN guards, periodic
 full-dataset logging, and early stopping on the validation field MSE. The
@@ -352,7 +351,7 @@ CSV.write(joinpath(@__DIR__, HISTORY_FILE), history)
 > Note: `global best` is needed when pasting the loop at top level in the
 > REPL; inside the script's `main()` it is a plain local assignment.
 
-## 12. Save the trained parameters
+## 11. Save the trained parameters
 
 Every parameter flattened into one named CSV:
 
@@ -365,7 +364,7 @@ par_vals = Float64.(vcat(ps.A_re, ps.A_im, ps.B_re, ps.B_im, ps.qkr,
 CSV.write(joinpath(@__DIR__, PARAMETER_FILE), DataFrame(parameter = par_names, value = par_vals))
 ```
 
-## 13. Evaluate the learned SSP
+## 12. Evaluate the learned SSP
 
 Compare the learned c(z) against the reference profile on the model depth
 grid, save the CSV, and plot it with the five anchors:
@@ -389,7 +388,7 @@ scatter!(p_ssp, Float64.(c_anchor_true), Float64.(SSP_ANCHOR_DEPTHS);
 save_plot(p_ssp, SSP_PLOT_FILE)
 ```
 
-## 14. Evaluate the field over the area of interest
+## 13. Evaluate the field over the area of interest
 
 Subsample the dense AOI grid onto 0.5 m spacing, predict, and compare against
 Kraken side by side (black lines mark the 650–700 m training band):
@@ -427,7 +426,7 @@ save_plot(plot(p1, p2; layout = (1, 2), size = (1300, 430), dpi = 150, margin = 
           AOI_PLOT_FILE)
 ```
 
-## 15. Plot the training history
+## 14. Plot the training history
 
 Train/validation field MSE for the best restart:
 
