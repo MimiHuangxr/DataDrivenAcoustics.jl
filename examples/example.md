@@ -453,3 +453,9 @@ The second figure overlays the ground truth SSP (obtained from reference paper) 
 The third figure displays the MSE for training and validation field for the rerun：
 
 <img src="../docs/images/mbnn-history.png" width="600">
+
+## Publications
+
+- K. Li and M. Chitre, "Physics-aided data-driven modal ocean acoustic
+  propagation modeling," in International Congress of Acoustics, 2022.
+  [(online)](https://arl.nus.edu.sg/wp-content/uploads/2022/09/Kexin_Physics-aided_ICAKorea2022.pdf)
