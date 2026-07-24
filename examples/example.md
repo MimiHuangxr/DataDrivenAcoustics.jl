@@ -444,12 +444,12 @@ parameter CSV, the SSP and AOI prediction CSVs, and the three PNGs.
 ## Final Plots
 After the programme is run, it will display 3 figures, with the first one being Kraken generated 
 ground truth amplitude vs. MBNN learned amplitude:
-<img width="1615" height="532" alt="image" src="https://github.com/user-attachments/assets/1411ff1b-1bb3-4ca7-94dc-23443b162119" />
+<img src="../docs/images/mbnn-aoi.png" width="900">
 
 The second figure overlays the ground truth SSP (obtained from reference paper) with the predicted SSP:
 
-<img width="800" height="532" alt="image" src="https://github.com/user-attachments/assets/abdcb550-55a1-44e3-84db-7d34b100093e" />
+<img src="../docs/images/mbnn-ssp.png" width="600">
 
 The third figure displays the MSE for training and validation field for the rerun：
 
-<img width="800" height="532" alt="image" src="https://github.com/user-attachments/assets/bff702b3-2edb-4917-bf94-60cb80233347" />
+<img src="../docs/images/mbnn-history.png" width="600">
