@@ -257,7 +257,8 @@ Eqn. 22 pieces plus the two SSP terms, computed once and reused for logging:
 
 ```julia
 function components(ps, st, X, y)
-    amp = amplitude_output(model, ps, st, X) ./ Float32(yscale)
+    yf, _ = model(X, ps, st)
+    amp = hypot.(yf[1, :], yf[2, :]) ./ Float32(yscale)
     cgrid = sound_speed_grid(model, ps)
     span_excess = max(maximum(cgrid) - minimum(cgrid) - MAX_SSP_SPAN, 0f0)
     return (
@@ -403,7 +404,8 @@ ranges = sort(unique(Float64.(df_small.range_m)))
 depths = sort(unique(Float64.(df_small.depth_m)))
 
 amp_true = Float64.(df_small.amp)
-amp_pred = Float64.(amplitude_output(model, ps, st, make_input(df_small.range_m, df_small.depth_m)))
+yf, _ = model(make_input(df_small.range_m, df_small.depth_m), ps, st)
+amp_pred = Float64.(hypot.(yf[1, :], yf[2, :]))
 db_true = 20 .* log10.(amp_true .+ 1e-30)
 db_pred = 20 .* log10.(amp_pred .+ 1e-30)
 db_err = db_pred .- db_true
