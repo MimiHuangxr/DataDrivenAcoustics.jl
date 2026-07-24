@@ -1,6 +1,30 @@
+# Fractions of the free-water wavenumber kmax = ω/cmin that bound the learned kᵣ.
+# The lower bound keeps grazing modes away from kᵣ = 0, where the 1/√(r·kᵣ) range
+# scaling diverges; the upper bound keeps kᵣ below kmax so the shallowest part of
+# the water column stays propagating.
+const _KR_LO_FRACTION = 0.02f0
+const _KR_HI_FRACTION = 0.999f0
+
+# Smallest range used in the modal sum; avoids division by zero at r = 0.
+const _RANGE_FLOOR = 1f-3
+
+# Added under the square root for the vertical wavenumber and its evanescent
+# counterpart, so the derivative stays finite at a turning point where
+# s = k² - kᵣ² passes through zero.
+const _TURNING_POINT_EPS = 1f-8
+
+# Added to kz before dividing, so the 1/√kz mode normalisation stays finite near
+# a turning point.
+const _KZ_FLOOR = 1f-6
+
+# Keeps sigmoid-bounded parameters away from the interval endpoints, where their
+# logit is infinite.
+const _LOGIT_MARGIN = 1f-4
+
 """
-ModalBasisNN_2D(D, f; nmodes=30, nhidden=32, cmin=1400.0, cmax=1500.0,
-                    cinit=1450.0, ngrid=201, rref=675.0, cref=soundspeed())
+    ModalBasisNN_2D(D, f; nmodes=30, nhidden=32, cmin=1400.0, cmax=1500.0,
+                    cinit=1450.0, ngrid=201, rref=675.0, cref=soundspeed(),
+                    seabed=FluidBoundary(2700.0, 5000.0))
 
 A 2D modal-basis neural network layer for waveguide depth `D` (m) and source
 frequency `f` (Hz). Calling the layer with a 3×N input matrix of ranges (row 1),
@@ -20,19 +44,29 @@ Fields:
 - `klo`, `khi`: horizontal wavenumber bounds (rad/m)
 - `cref`: reference sound speed used to interpret row 3; must match the
   `soundspeed` given to `DataDrivenPropagationModel`
+- `seabed`: boundary used only for the Pekeris warm start of kᵣ; training moves
+  the wavenumbers away from it, so an approximate value is usually sufficient
 """
-struct ModalBasisNN_2D <: LuxCore.AbstractLuxLayer
-  nmodes::Int; nhidden::Int
-  D::Float32; rref::Float32; dz::Float32; ω::Float32
-  cmin::Float32; cmax::Float32; cinit::Float32
+struct ModalBasisNN_2D{B} <: LuxCore.AbstractLuxLayer
+  nmodes::Int
+  nhidden::Int
+  D::Float32
+  rref::Float32
+  dz::Float32
+  ω::Float32
+  cmin::Float32
+  cmax::Float32
+  cinit::Float32
   ζ::Vector{Float32}
-  klo::Float32; khi::Float32
+  klo::Float32
+  khi::Float32
   cref::Float32
+  seabed::B
 end
 
 function ModalBasisNN_2D(D, f; nmodes::Int=30, nhidden::Int=32, cmin=1400.0,
                          cmax=1500.0, cinit=1450.0, ngrid::Int=201, rref=675.0,
-                         cref=soundspeed())
+                         cref=soundspeed(), seabed=FluidBoundary(2700.0, 5000.0))
   nmodes > 0 || error("nmodes must be positive")
   nhidden > 0 || error("nhidden must be positive for unknown-SSP training")
   # at least 3 points needed since interpolation uses neighboring depth points
@@ -47,11 +81,11 @@ function ModalBasisNN_2D(D, f; nmodes::Int=30, nhidden::Int=32, cmin=1400.0,
   ζ = Float32.(range(0f0, 1f0; length=ngrid))
   dz = D32 / Float32(ngrid - 1)
   kmax = ω / cmin32
-  klo, khi = 0.02f0 * kmax, 0.999f0 * kmax
+  klo, khi = _KR_LO_FRACTION * kmax, _KR_HI_FRACTION * kmax
   cref32 = Float32(cref)
   cref32 > 0 || error("cref must be positive")
   ModalBasisNN_2D(nmodes, nhidden, D32, Float32(rref), dz, ω,
-                  cmin32, cmax32, cinit32, ζ, klo, khi, cref32)
+                  cmin32, cmax32, cinit32, ζ, klo, khi, cref32, seabed)
 end
 
 ## interface methods
@@ -70,8 +104,8 @@ function LuxCore.initialparameters(rng::AbstractRNG, l::ModalBasisNN_2D)
   catch err
     @warn "PekerisModeSolver warm start failed; keeping analytic init" exception = err
   end
-  t = clamp.((kr0 .- l.klo) ./ (l.khi - l.klo), 1f-4, 1f0 - 1f-4)
-  u0 = clamp((l.cinit - l.cmin) / (l.cmax - l.cmin), 1f-4, 1f0 - 1f-4)
+  t = clamp.((kr0 .- l.klo) ./ (l.khi - l.klo), _LOGIT_MARGIN, 1f0 - _LOGIT_MARGIN)
+  u0 = clamp((l.cinit - l.cmin) / (l.cmax - l.cmin), _LOGIT_MARGIN, 1f0 - _LOGIT_MARGIN)
   (
     A_re = 1f-2 .* randn(rng, Float32, l.nmodes),
     A_im = 1f-2 .* randn(rng, Float32, l.nmodes),
@@ -117,15 +151,15 @@ function (l::ModalBasisNN_2D)(inp::AbstractMatrix, ps, st::NamedTuple)
   all(z .<= 0f0) || error("depths must satisfy z ≤ 0 (negative below the surface)")
   d = -z
   _check_frequency(l, @view inp[3, :])
-  r_safe = max.(r, 1f-3)
+  r_safe = max.(r, _RANGE_FLOOR)
   kr = horizontal_wavenumbers(l, ps)
   k = _kgrid(l, ps)
   s = k .^ 2 .- reshape(kr .^ 2, 1, :)
-  kz = sqrt.(max.(s, 0f0) .+ 1f-8)
+  kz = sqrt.(max.(s, 0f0) .+ _TURNING_POINT_EPS)
   phase_z = _cumtrapz(l.dz, kz)
-  κ = sqrt.(max.(-s, 0f0) .+ 1f-8)
+  κ = sqrt.(max.(-s, 0f0) .+ _TURNING_POINT_EPS)
   decay_z = exp.(-_cumtrapz(l.dz, κ))
-  invsqrt_kz = decay_z ./ sqrt.(kz .+ 1f-6)
+  invsqrt_kz = decay_z ./ sqrt.(kz .+ _KZ_FLOOR)
   A_re, A_im = reshape(ps.A_re, 1, :), reshape(ps.A_im, 1, :)
   B_re, B_im = reshape(ps.B_re, 1, :), reshape(ps.B_im, 1, :)
   cosφ, sinφ = cos.(phase_z), sin.(phase_z)
@@ -172,23 +206,27 @@ _cumtrapz(dz::Float32, y::AbstractMatrix) =
 # wavenumber grid k(z) = ω / c(z) from the learned SSP
 _kgrid(l::ModalBasisNN_2D, ps) = l.ω ./ sound_speed_grid(l, ps)
 
-# warm-start kr; only called at initialization, the SSNN takes over afterwards
+# warm-start kr; only called at initialization, the SSNN takes over afterwards.
+# PekerisModeSolver exposes mode wavenumbers through `arrivals`, so a source and
+# receiver are needed to call it even though kᵣ depends only on the environment
 function _pekeris_kr(l::ModalBasisNN_2D)
   f = Float64(l.ω) / (2π)
   env = UnderwaterEnvironment(
     bathymetry = Float64(l.D),
     soundspeed = Float64(l.cinit),
     density = 1000.0,
-    seabed = FluidBoundary(2700.0, 5000.0),  # hard rock-like halfspace; swap for actual seabed
+    seabed = l.seabed,
   )
   pm = PekerisModeSolver(env; nmodes=l.nmodes)
   tx = AcousticSource(0.0, -Float64(l.D) / 2, f)
   rx = AcousticReceiver(Float64(l.rref), -Float64(l.D) / 2)
-  # kr depends only on the environment, not on tx/rx positions
   modes = arrivals(pm, tx, rx)
   Float32[clamp(Float32(real(m.kᵣ)), l.klo, l.khi) for m in modes]
 end
 
+# row 3 carries k = ω/cref, built by acoustic_field from the source frequency;
+# the modal basis is tied to the construction-time frequency, so a mismatch is
+# an error rather than something the layer can adapt to
 function _check_frequency(l::ModalBasisNN_2D, k)
   ktarget = l.ω / l.cref
   atol = 1f-3 * ktarget
