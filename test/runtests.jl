@@ -2,11 +2,8 @@ using DataDrivenAcoustics
 using UnderwaterAcoustics
 using StableRNGs
 using Test
-using Statistics
-using Lux, Zygote, Optimisers
-
-include(joinpath(@__DIR__, "..", "src", "MBNN.jl"))
-using .MBNN
+using Lux
+using Zygote, ADTypes
 
 ###Ray Models
 
@@ -25,41 +22,26 @@ rxs = [AcousticReceiver(x, z) for (x, z) ∈ zip(rxpos[1,:], rxpos[2,:])]
 loss = TransmissionLossMSE(pm, AcousticSource(nothing, 250), rxs, xloss)
 DataDrivenAcoustics.fit!(pm, loss; optimizer=Adam(5e-6), minloss=100, maxiters=5000)
 DataDrivenAcoustics.fit!(pm, loss; optimizer=BFGS(), maxiters=200)
-
 @test loss(pm.params, nothing) < 5
 
 ###Modal Models
-
-# training loop lives in a function so parameter updates are not lost to soft scope
-function train_mbnn(model, ps, st, X, xamp; iters=300)
-  yscale = Float32(mean(Float64.(xamp)))
-  y_train = xamp ./ yscale
-  objective(p) = mean(abs2, amplitude_output(model, p, st, X) ./ yscale .- y_train)
-  initial_loss = objective(ps)
-  opt_state = Optimisers.setup(
-    Optimisers.OptimiserChain(Optimisers.ClipNorm(100.0), Optimisers.Adam(1f-3)), ps)
-  for _ ∈ 1:iters
-    l, grads = Zygote.withgradient(objective, ps)
-    isfinite(l) || error("non-finite loss during MBNN training")
-    opt_state, ps = Optimisers.update(opt_state, ps, grads[1])
-  end
-  ps, initial_loss, objective(ps)
-end
 
 @testset "Modal Models" begin
 
   # prepare dataset from a known Pekeris environment
   rng = StableRNG(1224)
   D, freq = 25.0, 500.0
-  env = UnderwaterEnvironment(bathymetry=D, soundspeed=1500.0, seabed=SandyClay)
-  pm = PekerisModeSolver(env; nmodes=6)
+  env = UnderwaterEnvironment(bathymetry=D, soundspeed=1500.0,
+                              seabed=FluidBoundary(1800.0, 1650.0))
+  pm1 = PekerisModeSolver(env; nmodes=6)
   tx = AcousticSource(0.0, -5.0, freq)
   rxpos = rand(rng, 2, 200) .* [50.0, 22.0] .+ [650.0, -23.0]
   rxs = [AcousticReceiver(rxpos[1,i], rxpos[2,i]) for i ∈ 1:size(rxpos,2)]
-  xamp = Float32.(abs.(acoustic_field(pm, tx, rxs)))
+  xamp = Float32.(abs.(acoustic_field(pm1, tx, rxs)))
 
   # model construction and parameter initialisation
-  model = ModalBasisNN_2D(D, freq; nmodes=6, nhidden=12, rref=675.0)
+  model = ModalBasisNN_2D(D, freq; nmodes=6, nhidden=12, rref=675.0,
+                          cmin=1400.0, cmax=1600.0, cinit=1500.0)
   ps, st = Lux.setup(rng, model)
   @test length(model.ζ) == 201
   @test length(ps.A_re) == 6 && length(ps.ssp.W1) == 12
@@ -79,8 +61,12 @@ end
   @test all(≈(1), sum(W; dims=2))
   @test all(W .>= 0)
 
+  # the layer takes a 3-row [x; z; k] input, with z <= 0 below the surface
+  krow = model.ω / model.cref
+  X = Float32.(vcat(rxpos[1,:]', -abs.(rxpos[2,:]'),
+                    fill(krow, 1, size(rxpos, 2))))
+
   # forward pass returns finite real/imaginary pressure
-  X = Float32.(vcat(rxpos[1,:]', abs.(rxpos[2,:]')))
   yfield, _ = model(X, ps, st)
   @test size(yfield) == (2, size(X, 2))
   @test all(isfinite, yfield)
@@ -92,14 +78,28 @@ end
   @test all(amp .>= 0)
   @test amp ≈ hypot.(yfield[1,:], yfield[2,:])
 
-  # training reduces the field error
-  ps, initial_loss, final_loss = train_mbnn(model, ps, st, X, xamp)
+  # the input contract is enforced rather than silently accepted
+  @test_throws ErrorException model(X[1:2, :], ps, st)            # missing k row
+  @test_throws ErrorException model(vcat(X[1:1,:], abs.(X[2:2,:]), X[3:3,:]), ps, st)  # z > 0
+  @test_throws ErrorException model(vcat(X[1:2,:], 0.6f0 .* X[3:3,:]), ps, st)         # wrong frequency
+
+  # the model trains through the package's own fit!
+  pm = DataDrivenPropagationModel(model; rng=StableRNG(42))
+  loss = FieldAmplitudeMSE(pm, tx, rxs, xamp; sparsity=1f-6)
+  initial_loss = loss(pm.params, nothing)
+  DataDrivenAcoustics.fit!(pm, loss, AutoZygote(); optimizer=Adam(1f-3), maxiters=200)
+  final_loss = loss(pm.params, nothing)
   @test isfinite(initial_loss)
   @test isfinite(final_loss)
   @test final_loss < initial_loss
 
+  # querying a trained model at the wrong frequency is a loud error
+  rx = AcousticReceiver(675.0, -12.0)
+  @test acoustic_field(pm, tx, rx) isa Complex
+  @test_throws ErrorException acoustic_field(pm, AcousticSource(0.0, -5.0, 300.0), rx)
+
   # the sound speed profile stays physical after training
-  c_trained = sound_speed_grid(model, ps)
+  c_trained = sound_speed_grid(pm.model, pm.params)
   @test all(model.cmin .< c_trained .< model.cmax)
   @test maximum(c_trained) - minimum(c_trained) < 100f0
 
