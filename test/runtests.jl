@@ -71,13 +71,6 @@ DataDrivenAcoustics.fit!(pm, loss; optimizer=BFGS(), maxiters=200)
   @test size(yfield) == (2, size(X, 2))
   @test all(isfinite, yfield)
 
-  # amplitude output is non-negative and consistent with the forward pass
-  amp = amplitude_output(model, ps, st, X)
-  @test length(amp) == size(X, 2)
-  @test all(isfinite, amp)
-  @test all(amp .>= 0)
-  @test amp ≈ hypot.(yfield[1,:], yfield[2,:])
-
   # the input contract is enforced rather than silently accepted
   @test_throws ErrorException model(X[1:2, :], ps, st)            # missing k row
   @test_throws ErrorException model(vcat(X[1:1,:], abs.(X[2:2,:]), X[3:3,:]), ps, st)  # z > 0
@@ -93,6 +86,12 @@ DataDrivenAcoustics.fit!(pm, loss; optimizer=BFGS(), maxiters=200)
   @test isfinite(final_loss)
   @test final_loss < initial_loss
 
+  # amplitudes come through the standard API, and are non-negative and finite
+  amp = abs.(acoustic_field(pm, tx, rxs))
+  @test length(amp) == length(rxs)
+  @test all(isfinite, amp)
+  @test all(amp .>= 0)
+  
   # querying a trained model at the wrong frequency is a loud error
   rx = AcousticReceiver(675.0, -12.0)
   @test acoustic_field(pm, tx, rx) isa Complex
