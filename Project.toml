@@ -12,6 +12,8 @@ OptimizationOptimisers = "42dfb2eb-d2b4-4451-abcd-913932933ac1"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 ReverseDiff = "37e2e3b7-166d-5795-8a7a-e32c996b4267"
 UnderwaterAcoustics = "0efb1f7a-1ce7-46d2-9f48-546a4c8fbb99"
+ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
+LogExpFunctions = "2ab3a3ac-af41-5b50-aa03-7779005ae688"
 
 [compat]
 ComponentArrays = "0.15"
