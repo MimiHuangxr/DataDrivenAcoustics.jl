@@ -144,17 +144,6 @@ function (l::ModalBasisNN_2D)(inp::AbstractMatrix, ps, st::NamedTuple)
 end
 
 """
-    amplitude_output(l::ModalBasisNN_2D, ps, st, inp)
-
-Run the forward pass and return the pressure amplitude |p| at each input
-(range, depth) column of `inp`.
-"""
-function amplitude_output(l::ModalBasisNN_2D, ps, st, inp)
-  y, _ = l(inp, ps, st)
-  hypot.(y[1, :], y[2, :])
-end
-
-"""
     depth_interpolation_matrix(l::ModalBasisNN_2D, depths)
 
 Return a length(depths) × ngrid linear interpolation matrix that evaluates
