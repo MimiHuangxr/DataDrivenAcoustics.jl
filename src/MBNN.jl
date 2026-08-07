@@ -1,10 +1,3 @@
-# Fractions of the free-water wavenumber kmax = ω/cmin that bound the learned kᵣ.
-# The lower bound keeps grazing modes away from kᵣ = 0, where the 1/√(r·kᵣ) range
-# scaling diverges; the upper bound keeps kᵣ below kmax so the shallowest part of
-# the water column stays propagating.
-const _KR_LO_FRACTION = 0.02f0
-const _KR_HI_FRACTION = 0.999f0
-
 # Smallest range used in the modal sum; avoids division by zero at r = 0.
 const _RANGE_FLOOR = 1f-3
 
@@ -66,7 +59,8 @@ end
 
 function ModalBasisNN_2D(D, f; nmodes::Int=30, nhidden::Int=32, cmin=1400.0,
                          cmax=1500.0, cinit=1450.0, ngrid::Int=201, rref=675.0,
-                         cref=soundspeed(), seabed=FluidBoundary(2700.0, 5000.0))
+                         cref=soundspeed(), seabed=FluidBoundary(2700.0, 5000.0),
+                         kr_lo_fraction=0.02, kr_hi_fraction=0.999)
   nmodes > 0 || error("nmodes must be positive")
   nhidden > 0 || error("nhidden must be positive for unknown-SSP training")
   # at least 3 points needed since interpolation uses neighboring depth points
@@ -77,11 +71,13 @@ function ModalBasisNN_2D(D, f; nmodes::Int=30, nhidden::Int=32, cmin=1400.0,
   cmin32, cmax32, cinit32 = Float32(cmin), Float32(cmax), Float32(cinit)
   cmin32 < cmax32 || error("cmin must be smaller than cmax")
   cmin32 < cinit32 < cmax32 || error("cinit must lie between cmin and cmax")
+  0f0 < Float32(kr_lo_fraction) < Float32(kr_hi_fraction) < 1f0 ||
+    error("need 0 < kr_lo_fraction < kr_hi_fraction < 1")
   ω = 2f0 * Float32(pi) * f32
   ζ = Float32.(range(0f0, 1f0; length=ngrid))
   dz = D32 / Float32(ngrid - 1)
   kmax = ω / cmin32
-  klo, khi = _KR_LO_FRACTION * kmax, _KR_HI_FRACTION * kmax
+  klo, khi = Float32(kr_lo_fraction) * kmax, Float32(kr_hi_fraction) * kmax
   cref32 = Float32(cref)
   cref32 > 0 || error("cref must be positive")
   ModalBasisNN_2D(nmodes, nhidden, D32, Float32(rref), dz, ω,
