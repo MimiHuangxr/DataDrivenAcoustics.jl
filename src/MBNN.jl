@@ -129,7 +129,8 @@ function sound_speed_grid(l::ModalBasisNN_2D, ps)
   W1, b1 = reshape(ps.ssp.W1, 1, :), reshape(ps.ssp.b1, 1, :)
   h = max.(z .* W1 .+ b1, 0f0)
   raw = vec(h * ps.ssp.W2 .+ ps.ssp.b2)
-  l.cmin .+ (l.cmax - l.cmin) .* sigmoid.(raw)
+  c = l.cmin .+ (l.cmax - l.cmin) .* sigmoid.(raw)
+  SampledField(c; z = .-(l.D .* l.ζ))
 end
 
 """
