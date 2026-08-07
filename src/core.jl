@@ -9,7 +9,6 @@ import Random
 import Lux
 import Lux: LuxCore, sigmoid
 import LogExpFunctions: logit
-import ChainRulesCore
 
 export DataDrivenPropagationModel, TransmissionLossMSE, FieldAmplitudeMSE
 export ModalBasisNN_2D
