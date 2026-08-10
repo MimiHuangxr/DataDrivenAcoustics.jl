@@ -14,6 +14,8 @@ const _KZ_FLOOR = 1f-6
 # logit is infinite.
 const _LOGIT_MARGIN = 1f-4
 
+logit(p) = log(p / (1 - p))
+
 """
     ModalBasisNN_2D(D, f; nmodes=30, nhidden=32, cmin=1400.0, cmax=1500.0,
                     cinit=1450.0, ngrid=201, rref=675.0, cref=soundspeed(),
