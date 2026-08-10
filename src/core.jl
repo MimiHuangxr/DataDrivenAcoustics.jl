@@ -8,7 +8,6 @@ import ReverseDiff
 import Random
 import Lux
 import Lux: LuxCore, sigmoid
-import LogExpFunctions: logit
 
 export DataDrivenPropagationModel, TransmissionLossMSE, FieldAmplitudeMSE
 export ModalBasisNN_2D
