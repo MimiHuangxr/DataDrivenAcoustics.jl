@@ -1,5 +1,5 @@
 using UnderwaterAcoustics
-import UnderwaterAcoustics: AbstractPropagationModel, AbstractAcousticSource, AbstractAcousticReceiver
+import UnderwaterAcoustics: AbstractPropagationModel, AbstractAcousticSource, AbstractAcousticReceiver, ModeArrival
 import ComponentArrays: ComponentArray
 import Optimization: OptimizationFunction, OptimizationProblem, solve, AutoReverseDiff
 import OptimizationOptimisers: Adam
@@ -11,7 +11,7 @@ import Lux: LuxCore, sigmoid
 
 export DataDrivenPropagationModel, TransmissionLossMSE, ComplexAmplitudeMSE
 export ModalBasisNN_2D
-export sound_speed_grid, horizontal_wavenumbers
+export sound_speed_grid
 export depth_interpolation_matrix
 export Adam, BFGS, LBFGS
 public fit!
@@ -55,6 +55,22 @@ function UnderwaterAcoustics.acoustic_field(pm::DataDrivenPropagationModel, tx::
   inp = Float32[getfield.(p, :x) getfield.(p, :z) fill(k, length(p))]
   out = Lux.LuxCore.stateless_apply(pm.model, inp', pm.params)
   reshape(complex.(out[1,:], out[2,:]), size(rxs))
+end
+
+"""
+    arrivals(pm::DataDrivenPropagationModel, tx::AbstractAcousticSource, rx::AbstractAcousticReceiver)
+
+Return the learned modal arrivals for `pm` (wrapping a [`ModalBasisNN_2D`](@ref))
+as a vector of `ModeArrival`s. Only `m` (mode number), `kᵣ` (horizontal
+wavenumber), and `vₚ` (phase velocity, derived as `ω/kᵣ`) are populated —
+`ψ` (mode function) and `v` (group velocity) are `missing`, since this model
+has no explicit depth eigenfunction and no dispersion curve to differentiate
+for group velocity.
+"""
+function UnderwaterAcoustics.arrivals(pm::DataDrivenPropagationModel, tx::AbstractAcousticSource, rx::AbstractAcousticReceiver)
+  l, ps = pm.model, pm.params
+  kr = l.klo .+ (l.khi - l.klo) .* sigmoid.(ps.qkr)
+  [ModeArrival(m, kr[m], missing, missing, l.ω / kr[m]) for m in eachindex(kr)]
 end
 
 function fit!(pm::DataDrivenPropagationModel, loss, adtype=AutoReverseDiff(compile=true); optimizer=Adam(1e-4), maxiters=100, minloss=0, show_progress=0)
