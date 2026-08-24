@@ -135,14 +135,6 @@ function sound_speed_grid(l::ModalBasisNN_2D, ps)
   SampledField(c; z = .-(l.D .* l.ζ))
 end
 
-"""
-    horizontal_wavenumbers(l::ModalBasisNN_2D, ps)
-
-Return the learned horizontal wavenumbers kᵣ per mode, bounded to (klo, khi).
-"""
-horizontal_wavenumbers(l::ModalBasisNN_2D, ps) =
-  l.klo .+ (l.khi - l.klo) .* sigmoid.(ps.qkr)
-
 function (l::ModalBasisNN_2D)(inp::AbstractMatrix, ps, st::NamedTuple)
   size(inp, 1) == 3 || error("input must have exactly 3 rows [x; z; k]; got $(size(inp, 1))")
   r = @view inp[1, :]
@@ -151,7 +143,7 @@ function (l::ModalBasisNN_2D)(inp::AbstractMatrix, ps, st::NamedTuple)
   d = -z
   _check_frequency(l, @view inp[3, :])
   r_safe = max.(r, _RANGE_FLOOR)
-  kr = horizontal_wavenumbers(l, ps)
+  kr = l.klo .+ (l.khi - l.klo) .* sigmoid.(ps.qkr)
   k = _kgrid(l, ps)
   s = k .^ 2 .- reshape(kr .^ 2, 1, :)
   kz = sqrt.(max.(s, 0f0) .+ _TURNING_POINT_EPS)
