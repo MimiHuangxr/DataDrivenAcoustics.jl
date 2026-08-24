@@ -9,7 +9,7 @@ import Random
 import Lux
 import Lux: LuxCore, sigmoid
 
-export DataDrivenPropagationModel, TransmissionLossMSE, FieldAmplitudeMSE
+export DataDrivenPropagationModel, TransmissionLossMSE, ComplexAmplitudeMSE
 export ModalBasisNN_2D
 export sound_speed_grid, horizontal_wavenumbers
 export depth_interpolation_matrix
@@ -87,18 +87,22 @@ function TransmissionLossMSE(pm::DataDrivenPropagationModel, tx::AbstractAcousti
 end
 
 """
-    FieldAmplitudeMSE(pm, tx, rxs, data; sparsity=10f0)
+    ComplexAmplitudeMSE(pm, tx, rxs, data; sparsity=10f0)
 
 Loss function for fitting a modal data-driven propagation model `pm` (e.g. one
-wrapping a [`ModalBasisNN_2D`](@ref)) to observed field amplitude data `data`
-measured at receivers `rxs`. The frequency of operation is determined by the
-source `tx`. The `sparsity` parameter controls the L1 regularization strength
-on the modal amplitude coefficients to promote sparsity in the solution.
+wrapping a [`ModalBasisNN_2D`](@ref)) to observed complex field data `data`
+(magnitude and phase, e.g. from a full solver such as Kraken or Pekeris)
+measured at receivers `rxs`. Unlike [`TransmissionLossMSE`](@ref), which fits
+amplitude only, this loss fits the complex field directly, so it makes use of
+phase information when it is available. The frequency of operation is
+determined by the source `tx`. The `sparsity` parameter controls the L1
+regularization strength on the modal amplitude coefficients to promote
+sparsity in the solution.
 """
-function FieldAmplitudeMSE(pm::DataDrivenPropagationModel, tx::AbstractAcousticSource, rxs::AbstractArray{<:AbstractAcousticReceiver}, data; sparsity=10f0)
+function ComplexAmplitudeMSE(pm::DataDrivenPropagationModel, tx::AbstractAcousticSource, rxs::AbstractArray{<:AbstractAcousticReceiver}, data; sparsity=10f0)
   let pm = pm, tx = tx, rxs = rxs, data = data, sparsity = sparsity
-    (ps, _) -> sum(abs2, abs.(vec(acoustic_field(pm(ps), tx, rxs))) - data) +
+    (ps, _) -> sum(abs2, vec(acoustic_field(pm(ps), tx, rxs)) - data) +
                sparsity * (sum(abs, ps.A_re) + sum(abs, ps.A_im) +
                            sum(abs, ps.B_re) + sum(abs, ps.B_im))
   end
-end 
+end
