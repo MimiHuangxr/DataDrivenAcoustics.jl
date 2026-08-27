@@ -115,7 +115,7 @@ determined by the source `tx`. The `sparsity` parameter controls the L1
 regularization strength on the modal amplitude coefficients to promote
 sparsity in the solution.
 """
-function ComplexAmplitudeMSE(pm::DataDrivenPropagationModel, tx::AbstractAcousticSource, rxs::AbstractArray{<:AbstractAcousticReceiver}, data; sparsity=10f0)
+function ComplexAmplitudeMSE(pm::DataDrivenPropagationModel, tx::AbstractAcousticSource, rxs::AbstractArray{<:AbstractAcousticReceiver}, data; sparsity=1f-6)
   let pm = pm, tx = tx, rxs = rxs, data = data, sparsity = sparsity
     (ps, _) -> sum(abs2, vec(acoustic_field(pm(ps), tx, rxs)) - data) +
                sparsity * (sum(abs, ps.A_re) + sum(abs, ps.A_im) +
