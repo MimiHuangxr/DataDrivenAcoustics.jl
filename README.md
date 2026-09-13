@@ -151,19 +151,21 @@ scatter!([p for p ∈ zip(rxpos[1,:], rxpos[2,:])]; markersize=0.5, color=:black
 
 Unlike the ray model, the modal parameters are physically meaningful, so the trained model also gives us the inverted sound-speed profile and the per-mode horizontal wavenumbers:
 ```julia
-julia> c = sound_speed_grid(pm.model, pm.params)          # learned c(z) on the depth grid
-201-element Vector{Float32}:
- 1497.2589
- 1497.2825
- 1497.3059
-    ⋮
- 1499.5771
- 1499.5764
- 1499.5758
-
-julia> modes = arrivals(pm, tx, rx)   # ModeArrival per mode: m, kᵣ, vₚ = ω/kᵣ
+julia> modes = arrivals(pm, tx, rx1)   # ModeArrival per mode: m, kᵣ, vₚ = ω/kᵣ
+12-element Vector{ModeArrival}:
+ mode 1:  kᵣ = 0.418527 rad/m, vₚ = 1501.26 m/s
+ mode 2:  kᵣ = 0.417767 rad/m, vₚ = 1503.99 m/s
+ mode 3:  kᵣ = 0.416894 rad/m, vₚ = 1507.14 m/s
+ mode 4:  kᵣ = 0.414813 rad/m, vₚ = 1514.70 m/s
+ mode 5:  kᵣ = 0.412647 rad/m, vₚ = 1522.65 m/s
+ mode 6:  kᵣ = 0.409930 rad/m, vₚ = 1532.74 m/s
+ mode 7:  kᵣ = 0.404691 rad/m, vₚ = 1552.59 m/s
+ mode 8:  kᵣ = 0.401349 rad/m, vₚ = 1565.51 m/s
+ mode 9:  kᵣ = 0.397844 rad/m, vₚ = 1579.31 m/s
+ mode 10: kᵣ = 0.391702 rad/m, vₚ = 1604.07 m/s
+ mode 11: kᵣ = 0.385701 rad/m, vₚ = 1629.03 m/s
+ mode 12: kᵣ = 0.379055 rad/m, vₚ = 1657.59 m/s
 ```
-The learned profile sits within a few m/s of the true 1500 m/s water column, even though the model was never given the sound speed — it was recovered from the complex field alone.
 
 For a complete example of joint field prediction and sound-speed inversion, see [`examples/`](examples/).
 
