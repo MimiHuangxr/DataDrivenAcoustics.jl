@@ -129,8 +129,16 @@ Prediction and comparison work exactly as before:
 ```julia
 rx = AcousticReceiverGrid2D(1000.0:5.0:4000.0, -195.0:1.0:-5.0)
 x = transmission_loss(pm, tx, rx)
-plot(rx, x; xlims=(1000,4000), ylims=(-195,-5))
-scatter!([p for p ∈ zip(rxpos[1,:], rxpos[2,:])]; markersize=0.5, color=:black)
+x_true = transmission_loss(pm1, tx, rx)
+
+p1 = plot(rx, x_true; xlims=(1000,4000), ylims=(-195,-5), clim=(50,90), title="Ground truth")
+scatter!(p1, rxpos[1,:], rxpos[2,:]; markersize=0.5, color=:black, label="")
+
+p2 = plot(rx, x; xlims=(1000,4000), ylims=(-195,-5), clim=(50,90), title="Prediction")
+scatter!(p2, rxpos[1,:], rxpos[2,:]; markersize=0.5, color=:black, label="")
+
+plot(p1, p2; layout=(1,2), size=(1200,550),
+     left_margin=8*Plots.mm, bottom_margin=5*Plots.mm)
 ```
 <img src="docs/images/ex2.png" width="700">
 
