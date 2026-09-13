@@ -59,6 +59,8 @@ struct ModalBasisNN_2D{B} <: LuxCore.AbstractLuxLayer
   seabed::B
 end
 
+export ModalBasisNN_2D
+
 function ModalBasisNN_2D(D, f; nmodes::Int=30, nhidden::Int=32, cmin=1400.0,
                          cmax=1500.0, cinit=1450.0, ngrid::Int=201, rref=675.0,
                          cref=soundspeed(), seabed=FluidBoundary(2700.0, 5000.0),
