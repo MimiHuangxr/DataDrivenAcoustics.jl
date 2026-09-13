@@ -10,7 +10,6 @@ import Lux
 import Lux: LuxCore, sigmoid
 
 export DataDrivenPropagationModel, TransmissionLossMSE, ComplexAmplitudeMSE
-export ModalBasisNN_2D
 export sound_speed_grid
 export depth_interpolation_matrix
 export Adam, BFGS, LBFGS
