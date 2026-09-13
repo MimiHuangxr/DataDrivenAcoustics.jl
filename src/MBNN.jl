@@ -129,11 +129,7 @@ Return the learned sound-speed profile c(ζ) on the depth grid `l.ζ`, bounded
 to (cmin, cmax).
 """
 function sound_speed_grid(l::ModalBasisNN_2D, ps)
-  z = reshape(2f0 .* l.ζ .- 1f0, :, 1)
-  W1, b1 = reshape(ps.ssp.W1, 1, :), reshape(ps.ssp.b1, 1, :)
-  h = max.(z .* W1 .+ b1, 0f0)
-  raw = vec(h * ps.ssp.W2 .+ ps.ssp.b2)
-  c = l.cmin .+ (l.cmax - l.cmin) .* sigmoid.(raw)
+  c = _sound_speed_grid_raw(l, ps)
   SampledField(c; z = .-(l.D .* l.ζ))
 end
 
@@ -228,4 +224,13 @@ function _check_frequency(l::ModalBasisNN_2D, k)
           "but queried at $(fq) Hz")
   end
   nothing
+end
+
+# raw sound-speed values on the depth grid, before wrapping in SampledField
+function _sound_speed_grid_raw(l::ModalBasisNN_2D, ps)
+  z = reshape(2f0 .* l.ζ .- 1f0, :, 1)
+  W1, b1 = reshape(ps.ssp.W1, 1, :), reshape(ps.ssp.b1, 1, :)
+  h = max.(z .* W1 .+ b1, 0f0)
+  raw = vec(h * ps.ssp.W2 .+ ps.ssp.b2)
+  l.cmin .+ (l.cmax - l.cmin) .* sigmoid.(raw)
 end
