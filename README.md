@@ -95,7 +95,7 @@ pm1 = PekerisModeSolver(env; nmodes=12)
 tx = AcousticSource(0.0, -40.0, 100.0)
 rxpos = rand(StableRNG(1224), 2, 400) .* [400.0, 170.0] .+ [2000.0, -185.0]
 rxs = [AcousticReceiver(rxpos[1,i], rxpos[2,i]) for i ∈ 1:size(rxpos,2)]
-xamp = Float32.(abs.(acoustic_field(pm1, tx, rxs)))
+xfield = ComplexF32.(acoustic_field(pm1, tx, rxs))
 ```
 This gives field amplitudes in a 2.0 to 2.4 km range and 15 to 185 m depth, in a 200 m waveguide at 100 Hz.
 
@@ -111,7 +111,7 @@ pm = DataDrivenPropagationModel(
 
 The loss measures amplitude error with L1 regularization on the modal coefficients:
 ```julia
-loss = ComplexAmplitudeMSE(pm, tx, rxs, xamp; sparsity=1f-4)
+loss = ComplexAmplitudeMSE(pm, tx, rxs, xfield; sparsity=1f-4)
 ```
 The `sparsity` weight must be scaled to the magnitude of the data — too large a value drives the coefficients to zero and the model predicts a null field.
 
