@@ -110,7 +110,7 @@ pm = DataDrivenPropagationModel(
 
 The loss measures amplitude error with L1 regularization on the modal coefficients:
 ```julia
-loss = FieldAmplitudeMSE(pm, tx, rxs, xamp; sparsity=1f-6)
+loss = ComplexAmplitudeMSE(pm, tx, rxs, xamp; sparsity=1f-4)
 ```
 The `sparsity` weight must be scaled to the magnitude of the data — too large a value drives the coefficients to zero and the model predicts a null field.
 
