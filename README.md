@@ -85,7 +85,7 @@ While we see that the match is not perfect, it is pretty impressive given that w
 
 ## Modal Models
 
-For shallow-water waveguides, where the field is well described by a small number of propagating modes, we use `ModalBasisNN_2D` instead. The workflow is the same as above, with three differences: the model is trained on field amplitude rather than transmission loss, it is tied to a single frequency fixed at construction time, and it additionally recovers the sound-speed profile.
+For shallow-water waveguides, where the field is well described by a small number of propagating modes, we use `ModalBasisNN_2D` instead. The workflow is the same as above, with three differences: the model is trained on the complex field (magnitude and phase) rather than transmission loss, it is tied to a single frequency fixed at construction time, and it additionally recovers the sound-speed profile.
 
 The dataset comes from a `PekerisModeSolver`, sampled at 400 random locations:
 ```julia
@@ -97,7 +97,7 @@ rxpos = rand(StableRNG(1224), 2, 400) .* [400.0, 170.0] .+ [2000.0, -185.0]
 rxs = [AcousticReceiver(rxpos[1,i], rxpos[2,i]) for i ∈ 1:size(rxpos,2)]
 xfield = ComplexF32.(acoustic_field(pm1, tx, rxs))
 ```
-This gives field amplitudes in a 2.0 to 2.4 km range and 15 to 185 m depth, in a 200 m waveguide at 100 Hz.
+This gives complex field samples in a 2.0 to 2.4 km range and 15 to 185 m depth, in a 200 m waveguide at 100 Hz.
 
 The model takes the waveguide depth and source frequency, and is wrapped in the same framework:
 ```julia
@@ -107,9 +107,9 @@ pm = DataDrivenPropagationModel(
                   rref=2200.0, seabed=FluidBoundary(1800.0, 1650.0));
   rng=StableRNG(42))
 ```
-`cmin` and `cmax` must bracket the true sound speed, since the learned c(z) is squashed into that interval and cannot reach either endpoint. `rref` should sit inside the measurement band.
+`cmin` and `cmax` must bracket the true sound speed, since the learned c(z) is squashed into that interval and cannot reach either endpoint. `rref` should sit inside the measurement band. `seabed` should match the ground-truth environment where possible — it's only used to warm-start the initial wavenumber guess, but a mismatched seabed can slow convergence noticeably.
 
-The loss measures amplitude error with L1 regularization on the modal coefficients:
+The loss measures complex field error with L1 regularization on the modal coefficients:
 ```julia
 loss = ComplexAmplitudeMSE(pm, tx, rxs, xfield; sparsity=1f-4)
 ```
@@ -153,28 +153,9 @@ julia> c = sound_speed_grid(pm.model, pm.params)          # learned c(z) on the 
  1499.5764
  1499.5758
 
-julia> kr = horizontal_wavenumbers(pm.model, pm.params)   # learned kᵣ per mode
-12-element Vector{Float32}:
- 0.41817445
- 0.41748068
- 0.41693985
- 0.41443756
- 0.41266245
- 0.40882835
- 0.4050568
- 0.4003633
- 0.39674827
- 0.39006945
- 0.38477165
- 0.378004
+julia> modes = arrivals(pm, tx, rx)   # ModeArrival per mode: m, kᵣ, vₚ = ω/kᵣ
 ```
-The learned profile sits within a few m/s of the true 1500 m/s water column, even though the model was never given the sound speed — it was recovered from field amplitudes alone.
-
-Also unlike the ray model, a modal model only answers at the frequency it was built for. Querying at any other frequency is an error rather than a silently wrong answer:
-```julia
-acoustic_field(pm, AcousticSource(0.0, -40.0, 250.0), rx)
-# ERROR: ModalBasisNN_2D was built for 100.0 Hz but queried at 250.0 Hz
-```
+The learned profile sits within a few m/s of the true 1500 m/s water column, even though the model was never given the sound speed — it was recovered from the complex field alone.
 
 For a complete example of joint field prediction and sound-speed inversion, see [`examples/`](examples/).
 
