@@ -50,7 +50,7 @@ DataDrivenAcoustics.fit!(pm, loss; optimizer=BFGS(), maxiters=200)
   c = sound_speed_grid(model, ps)
   # horizontal_wavenumbers no longer exists; arrivals needs a pm,
   # so build a throwaway one from the model/ps already in scope here
-  kr = [m.kr for m in arrivals(DataDrivenPropagationModel(model, ps, model.cref), tx, rxs[1])]
+  kr = [m.kᵣ for m in arrivals(DataDrivenPropagationModel(model, ps, model.cref), tx, rxs[1])]
   @test length(c) == 201
   @test all(model.cmin .< c .< model.cmax)
   @test length(kr) == 6
