@@ -34,8 +34,11 @@ parameters, SSP and field prediction CSVs, and three plots.
 
 The MBNN model is part of `DataDrivenAcoustics`, so `ModalBasisNN_2D`,
 `sound_speed_grid`, `horizontal_wavenumbers`, and `depth_interpolation_matrix`
-come in with the package. `AcousticsToolbox` provides Kraken for the ground
-truth, and `StableRNGs` keeps the run reproducible:
+come in with the package. `AcousticsToolbox` provides Kraken for the ground truth. `StableRNGs` keeps
+the ground-truth data generation reproducible; the training restarts
+themselves use an unseeded `MersenneTwister` per restart, since exploring
+different random initializations is the point of the multi-restart
+strategy:
 
 ```julia
 using UnderwaterAcoustics
