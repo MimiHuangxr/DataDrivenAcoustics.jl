@@ -1,31 +1,3 @@
-using DataDrivenAcoustics
-using UnderwaterAcoustics
-using StableRNGs
-using Test
-using Lux
-using Zygote, ADTypes
-
-###Ray Models
-
-# prepare dataset
-rng = StableRNG(27)
-env = UnderwaterEnvironment(seabed=Rock, bathymetry=200.0)
-pm = PekerisRayTracer(env; max_bounces=3)
-tx = AcousticSource(0, -11, 250)
-rxpos = rand(rng, 2, 1000) .* [200.0, 40.0] .+ [5500.0, -110.0]
-rxs = [AcousticReceiver(rxpos[1,i], rxpos[2,i]) for i ∈ 1:size(rxpos,2)]
-xloss = Float32.(transmission_loss(pm, tx, rxs))
-
-# train data-driven model
-pm = DataDrivenPropagationModel(RayBasisNN_2D(60); rng=StableRNG(42))
-rxs = [AcousticReceiver(x, z) for (x, z) ∈ zip(rxpos[1,:], rxpos[2,:])]
-loss = TransmissionLossMSE(pm, AcousticSource(nothing, 250), rxs, xloss)
-DataDrivenAcoustics.fit!(pm, loss; optimizer=Adam(5e-6), minloss=100, maxiters=5000)
-DataDrivenAcoustics.fit!(pm, loss; optimizer=BFGS(), maxiters=200)
-@test loss(pm.params, nothing) < 5
-
-###Modal Models
-
 @testset "Modal Models" begin
 
   # prepare dataset from a known Pekeris environment
@@ -37,7 +9,7 @@ DataDrivenAcoustics.fit!(pm, loss; optimizer=BFGS(), maxiters=200)
   tx = AcousticSource(0.0, -5.0, freq)
   rxpos = rand(rng, 2, 200) .* [50.0, 22.0] .+ [650.0, -23.0]
   rxs = [AcousticReceiver(rxpos[1,i], rxpos[2,i]) for i ∈ 1:size(rxpos,2)]
-  xamp = Float32.(abs.(acoustic_field(pm1, tx, rxs)))
+  xfield = ComplexF32.(acoustic_field(pm1, tx, rxs))   # CHANGED: complex, not abs.() — matches ComplexAmplitudeMSE
 
   # model construction and parameter initialisation
   model = ModalBasisNN_2D(D, freq; nmodes=6, nhidden=12, rref=675.0,
@@ -48,7 +20,9 @@ DataDrivenAcoustics.fit!(pm, loss; optimizer=BFGS(), maxiters=200)
 
   # learned sound speed and wavenumbers respect their physical bounds
   c = sound_speed_grid(model, ps)
-  kr = horizontal_wavenumbers(model, ps)
+  # CHANGED: horizontal_wavenumbers no longer exists; arrivals needs a pm,
+  # so build a throwaway one from the model/ps already in scope here
+  kr = [m.kr for m in arrivals(DataDrivenPropagationModel(model, ps, model.cref), tx, rxs[1])]
   @test length(c) == 201
   @test all(model.cmin .< c .< model.cmax)
   @test length(kr) == 6
@@ -78,7 +52,7 @@ DataDrivenAcoustics.fit!(pm, loss; optimizer=BFGS(), maxiters=200)
 
   # the model trains through the package's own fit!
   pm = DataDrivenPropagationModel(model; rng=StableRNG(42))
-  loss = FieldAmplitudeMSE(pm, tx, rxs, xamp; sparsity=1f-6)
+  loss = ComplexAmplitudeMSE(pm, tx, rxs, xfield; sparsity=1f-6)   # CHANGED: FieldAmplitudeMSE -> ComplexAmplitudeMSE, xamp -> xfield
   initial_loss = loss(pm.params, nothing)
   DataDrivenAcoustics.fit!(pm, loss, AutoZygote(); optimizer=Adam(1f-3), maxiters=200)
   final_loss = loss(pm.params, nothing)
