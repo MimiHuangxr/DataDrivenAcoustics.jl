@@ -1,3 +1,5 @@
+import ChainRulesCore
+
 # Smallest range used in the modal sum; avoids division by zero at r = 0.
 const _RANGE_FLOOR = 1f-3
 
@@ -154,7 +156,13 @@ function (l::ModalBasisNN_2D)(inp::AbstractMatrix, ps, st::NamedTuple)
   cosφ, sinφ = cos.(phase_z), sin.(phase_z)
   ψre = invsqrt_kz .* ((A_re .+ B_re) .* cosφ .+ (B_im .- A_im) .* sinφ)
   ψim = invsqrt_kz .* ((A_im .+ B_im) .* cosφ .+ (A_re .- B_re) .* sinφ)
-  Wdepth = depth_interpolation_matrix(l, d)
+  # depth_interpolation_matrix uses in-place mutation to build a fixed-geometry
+  # matrix that depends only on receiver depths, not on any trainable
+  # parameter; Zygote cannot differentiate through the mutation, so it is
+  # excluded from the AD tape rather than rewritten mutation-free
+  Wdepth = ChainRulesCore.ignore_derivatives() do
+    depth_interpolation_matrix(l, d)
+  end
   Dre, Dim = Wdepth * ψre, Wdepth * ψim
   range_phase = (r_safe .- l.rref) .* reshape(kr, 1, :)
   range_scale = 1f0 ./ sqrt.(r_safe .* reshape(kr, 1, :))
