@@ -47,7 +47,7 @@ DataDrivenAcoustics.fit!(pm, loss; optimizer=BFGS(), maxiters=200)
   @test length(ps.A_re) == 6 && length(ps.ssp.W1) == 12
 
   # learned sound speed and wavenumbers respect their physical bounds
-  c = sound_speed_grid(model, ps)
+  c = DataDrivenAcoustics._sound_speed_grid_raw(model, ps)
   # horizontal_wavenumbers no longer exists; arrivals needs a pm,
   # so build a throwaway one from the model/ps already in scope here
   kr = [m.kᵣ for m in arrivals(DataDrivenPropagationModel(model, ps, model.cref), tx, rxs[1])]
@@ -100,7 +100,7 @@ DataDrivenAcoustics.fit!(pm, loss; optimizer=BFGS(), maxiters=200)
   @test_throws ErrorException acoustic_field(pm, AcousticSource(0.0, -5.0, 300.0), rx)
 
   # the sound speed profile stays physical after training
-  c_trained = sound_speed_grid(pm.model, pm.params)
+  c_trained = DataDrivenAcoustics._sound_speed_grid_raw(pm.model, pm.params)
   @test all(model.cmin .< c_trained .< model.cmax)
   @test maximum(c_trained) - minimum(c_trained) < 100f0
 
