@@ -191,7 +191,7 @@ _cumtrapz(dz::Float32, y::AbstractMatrix) =
   dz .* (cumsum(y; dims=1) .- 0.5f0 .* y .- 0.5f0 .* y[1:1, :])
 
 # wavenumber grid k(z) = ω / c(z) from the learned SSP
-_kgrid(l::ModalBasisNN_2D, ps) = l.ω ./ sound_speed_grid(l, ps)
+_kgrid(l::ModalBasisNN_2D, ps) = l.ω ./ _sound_speed_grid_raw(l, ps)
 
 # warm-start kr; only called at initialization, the SSNN takes over afterwards.
 # PekerisModeSolver exposes mode wavenumbers through `arrivals`, so a source and
