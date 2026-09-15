@@ -123,6 +123,11 @@ DataDrivenAcoustics.fit!(pm, loss, AutoZygote();
   optimizer = Adam(5e-6),           # ADAM with specified learning rate
   maxiters = 5000,                  # minimize for 5000 epochs
   show_progress = 100)              # print progress every 100 epochs
+
+DataDrivenAcoustics.fit!(pm, loss, AutoZygote();
+  optimizer = BFGS(),               # BFGS quasi-Newton optimizer
+  maxiters = 200,                   # minimize to a maximum of 200 iterations
+  show_progress = 1)                # print progress every iteration
 ```
 
 Prediction and comparison work exactly as before:
