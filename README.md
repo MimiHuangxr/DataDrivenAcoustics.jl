@@ -2,7 +2,7 @@
 
 # DataDrivenAcoustics
 
-This package also provides physics-based data-driven acoustic propagation models for use with UnderwaterAcoustics.jl. Two model families are currently available: a ray-basis neural network (RBNN) for deep and mid-water propagation, and a modal-basis neural network (MBNN) for shallow-water waveguides, which additionally inverts for the sound-speed profile.
+This package also provides physics-based data-driven acoustic propagation models for use with UnderwaterAcoustics.jl. Four model families are currently available: a ray-basis neural network (RBNN) for deep and mid-water propagation; a modal-basis neural network (MBNN) for shallow-water waveguides, which additionally inverts for the sound-speed profile; and two full-wave models that learn the environment itself, a learnable wavenumber-integration model (a learnable fast-field program) and a learnable parabolic-equation model, both of which invert for the sound-speed profile and the seabed.
 
 This package first builds upon the ideas discussed in our journal paper "Data-Aided Underwater Acoustic Ray Propagation Modeling" published on IEEE Journal of Oceanic Engineering (available [online](https://ieeexplore.ieee.org/abstract/document/10224658)). It provides a Ray-basis neural network implementation for use with [`UnderwaterAcoustics.jl`](https://github.com/org-arl/UnderwaterAcoustics.jl).
 
@@ -173,6 +173,128 @@ julia> modes = arrivals(pm, tx, rx1)   # ModeArrival per mode: m, kᵣ, vₚ = �
 ```
 
 For a complete example of joint field prediction and sound-speed inversion, see [`examples/`](examples/).
+
+## Wavenumber Integration Models
+
+`WavenumberIntegrationNN_2D` is a learnable fast-field program. It learns the environment (the sound-speed profile, plus the seabed sound speed, density and attenuation) and computes the field by wavenumber integration, so it captures the full field, including the near field, and also inverts for the seabed.
+
+The dataset comes from `Kraken`, sampled at 400 random locations:
+```julia
+using AcousticsToolbox
+
+env = UnderwaterEnvironment(bathymetry=200.0, soundspeed=1500.0,
+                            seabed=FluidBoundary(1800.0, 1650.0))
+pm1 = Kraken(env)
+tx = AcousticSource(0.0, -40.0, 100.0)
+rxpos = rand(StableRNG(1224), 2, 400) .* [400.0, 170.0] .+ [2000.0, -185.0]
+rxs = [AcousticReceiver(rxpos[1,i], rxpos[2,i]) for i ∈ 1:size(rxpos,2)]
+xfield = ComplexF32.(acoustic_field(pm1, tx, rxs))
+```
+This gives complex field samples in a 2.0 to 2.4 km range and 15 to 185 m depth, in a 200 m waveguide at 100 Hz.
+
+The model takes the waveguide depth, source frequency and source depth. `rmax` should cover the furthest range you intend to predict at:
+```julia
+pm = DataDrivenPropagationModel(
+  WavenumberIntegrationNN_2D(200.0, 100.0, -40.0;
+                             cmin=1400.0, cmax=1600.0, cinit=1500.0, rmax=4000.0);
+  rng=StableRNG(42))
+loss = ComplexAmplitudeMSE(pm, tx, rxs, xfield)
+```
+`cmin` and `cmax` must bracket the true sound speed, since the learned c(z) is squashed into that interval and cannot reach either endpoint.
+
+The kernel's depth solver updates arrays in place, so training uses `ForwardDiff`. Start Julia with `-t auto`, as the kernel is evaluated in parallel:
+```julia
+using ForwardDiff, ADTypes
+
+DataDrivenAcoustics.fit!(pm, loss, AutoForwardDiff();
+  optimizer = BFGS(),               # BFGS quasi-Newton optimizer
+  maxiters = 50,                    # minimize to a maximum of 50 iterations
+  show_progress = 5)                # print progress every 5 iterations
+```
+The loss typically falls slowly for the first dozen or so iterations and then drops sharply once the seabed parameters settle, so it is worth allowing the full 50 iterations.
+
+We can now predict transmission loss over a much wider area than the measurements cover, and compare it with the ground truth:
+```julia
+rx = AcousticReceiverGrid2D(1000.0:5.0:4000.0, -195.0:1.0:-5.0)
+x = transmission_loss(pm, tx, rx)
+x_true = transmission_loss(pm1, tx, rx)
+
+p1 = plot(rx, x_true; xlims=(1000,4000), ylims=(-195,-5), clim=(50,90), title="Ground truth")
+scatter!(p1, rxpos[1,:], rxpos[2,:]; markersize=0.5, color=:black, label="")
+
+p2 = plot(rx, x; xlims=(1000,4000), ylims=(-195,-5), clim=(50,90), title="Prediction")
+scatter!(p2, rxpos[1,:], rxpos[2,:]; markersize=0.5, color=:black, label="")
+
+plot(p1, p2; layout=(1,2), size=(1200,550),
+     left_margin=8*Plots.mm, bottom_margin=5*Plots.mm)
+```
+<img src="docs/images/ex3.png" width="700">
+
+The model is able to extrapolate well beyond the area where measurements were made. Its parameters are the environment itself, so the trained model also gives us the inverted seabed:
+```julia
+seabed_parameters(pm.model, pm.params)    # (c = …, ρ = …, α = …)
+```
+For this dataset the recovered seabed is close to the true values of c = 1650 m/s, ρ = 1.8 and α = 0. The inverted water sound-speed profile is available from `sound_speed_grid(pm.model, pm.params)`.
+
+## Parabolic Equation Models
+
+`ParabolicEquationNN_2D` learns the environment (the sound-speed profile, plus the seabed sound speed, density and attenuation) and computes the field by marching a Padé parabolic equation out in range. It also inverts for the seabed.
+
+The dataset comes from `Kraken`, sampled at 400 random locations:
+```julia
+using AcousticsToolbox
+
+env = UnderwaterEnvironment(bathymetry=200.0, soundspeed=1500.0,
+                            seabed=FluidBoundary(1800.0, 1650.0))
+pm1 = Kraken(env)
+tx = AcousticSource(0.0, -40.0, 100.0)
+rxpos = rand(StableRNG(1224), 2, 400) .* [400.0, 170.0] .+ [2000.0, -185.0]
+rxs = [AcousticReceiver(rxpos[1,i], rxpos[2,i]) for i ∈ 1:size(rxpos,2)]
+xfield = ComplexF32.(acoustic_field(pm1, tx, rxs))
+```
+This gives complex field samples in a 2.0 to 2.4 km range and 15 to 185 m depth, in a 200 m waveguide at 100 Hz.
+
+The model takes the waveguide depth, source frequency and source depth:
+```julia
+pm = DataDrivenPropagationModel(
+  ParabolicEquationNN_2D(200.0, 100.0, -40.0;
+                         cmin=1400.0, cmax=1600.0, cinit=1500.0);
+  rng=StableRNG(42))
+loss = ComplexAmplitudeMSE(pm, tx, rxs, xfield)
+```
+`cmin` and `cmax` must bracket the true sound speed, since the learned c(z) is squashed into that interval and cannot reach either endpoint.
+
+The layer differentiates its march with a built-in adjoint, so `Zygote` gives a gradient for about the cost of three marches:
+```julia
+using Zygote, ADTypes
+
+DataDrivenAcoustics.fit!(pm, loss, AutoZygote();
+  optimizer = BFGS(),               # BFGS quasi-Newton optimizer
+  maxiters = 50,                    # minimize to a maximum of 50 iterations
+  show_progress = 5)                # print progress every 5 iterations
+```
+We can now predict transmission loss over a much wider area than the measurements cover, and compare it with the ground truth:
+```julia
+rx = AcousticReceiverGrid2D(1000.0:5.0:4000.0, -195.0:1.0:-5.0)
+x = transmission_loss(pm, tx, rx)
+x_true = transmission_loss(pm1, tx, rx)
+
+p1 = plot(rx, x_true; xlims=(1000,4000), ylims=(-195,-5), clim=(50,90), title="Ground truth")
+scatter!(p1, rxpos[1,:], rxpos[2,:]; markersize=0.5, color=:black, label="")
+
+p2 = plot(rx, x; xlims=(1000,4000), ylims=(-195,-5), clim=(50,90), title="Prediction")
+scatter!(p2, rxpos[1,:], rxpos[2,:]; markersize=0.5, color=:black, label="")
+
+plot(p1, p2; layout=(1,2), size=(1200,550),
+     left_margin=8*Plots.mm, bottom_margin=5*Plots.mm)
+```
+<img src="docs/images/ex4.png" width="700">
+
+The model is able to extrapolate well beyond the area where measurements were made. Its parameters are the environment itself, so the trained model also gives us the inverted seabed:
+```julia
+seabed_parameters(pm.model, pm.params)    # (c = …, ρ = …, α = …)
+```
+For this dataset the recovered seabed is close to the true values of c = 1650 m/s, ρ = 1.8 and α = 0. The inverted water sound-speed profile is available from `sound_speed_grid(pm.model, pm.params)`.
 
 ## Publications
 ### Primary papers
