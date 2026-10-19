@@ -6,6 +6,7 @@ import OptimizationOptimisers: Adam
 import OptimizationOptimJL: BFGS, LBFGS
 import ReverseDiff
 import Random
+import ChainRulesCore
 import Lux
 import Lux: LuxCore, sigmoid
 
@@ -42,7 +43,8 @@ function UnderwaterAcoustics.acoustic_field(pm::DataDrivenPropagationModel, tx::
   f = frequency(tx)
   p = location(rx)
   k = 2f0 * π * f / pm.c
-  inp = Float32[p.x; p.z; k;;]
+  # receiver positions are data, not parameters, so the input carries no gradient
+  inp = ChainRulesCore.ignore_derivatives(() -> Float32[p.x; p.z; k;;])
   out = Lux.LuxCore.stateless_apply(pm.model, inp, pm.params)
   complex(out[1], out[2])
 end
@@ -51,7 +53,8 @@ function UnderwaterAcoustics.acoustic_field(pm::DataDrivenPropagationModel, tx::
   f = frequency(tx)
   p = vec(location.(rxs))
   k = 2f0 * π * f / pm.c
-  inp = Float32[getfield.(p, :x) getfield.(p, :z) fill(k, length(p))]
+  # receiver positions are data, not parameters, so the input carries no gradient
+  inp = ChainRulesCore.ignore_derivatives(() -> Float32[getfield.(p, :x) getfield.(p, :z) fill(k, length(p))])
   out = Lux.LuxCore.stateless_apply(pm.model, inp', pm.params)
   reshape(complex.(out[1,:], out[2,:]), size(rxs))
 end
@@ -102,22 +105,25 @@ function TransmissionLossMSE(pm::DataDrivenPropagationModel, tx::AbstractAcousti
 end
 
 """
-    ComplexAmplitudeMSE(pm, tx, rxs, data; sparsity=10f0)
+    ComplexAmplitudeMSE(pm, tx, rxs, data; sparsity=1f-6)
 
-Loss function for fitting a modal data-driven propagation model `pm` (e.g. one
-wrapping a [`ModalBasisNN_2D`](@ref)) to observed complex field data `data`
-(magnitude and phase, e.g. from a full solver such as Kraken or Pekeris)
-measured at receivers `rxs`. Unlike [`TransmissionLossMSE`](@ref), which fits
-amplitude only, this loss fits the complex field directly, so it makes use of
-phase information when it is available. The frequency of operation is
-determined by the source `tx`. The `sparsity` parameter controls the L1
-regularization strength on the modal amplitude coefficients to promote
-sparsity in the solution.
+Loss function for fitting a data-driven propagation model `pm` to observed
+complex field data `data` (magnitude and phase, e.g. from a full solver such as
+Kraken or Pekeris) measured at receivers `rxs`. Unlike
+[`TransmissionLossMSE`](@ref), which fits amplitude only, this loss fits the
+complex field directly, so it makes use of phase information when it is
+available. The frequency of operation is determined by the source `tx`. For
+models with modal amplitude coefficients (e.g. [`ModalBasisNN_2D`](@ref)), the
+`sparsity` parameter controls the L1 regularization strength on those
+coefficients; models without them are not regularized.
 """
 function ComplexAmplitudeMSE(pm::DataDrivenPropagationModel, tx::AbstractAcousticSource, rxs::AbstractArray{<:AbstractAcousticReceiver}, data; sparsity=1f-6)
   let pm = pm, tx = tx, rxs = rxs, data = data, sparsity = sparsity
     (ps, _) -> sum(abs2, vec(acoustic_field(pm(ps), tx, rxs)) - data) +
-               sparsity * (sum(abs, ps.A_re) + sum(abs, ps.A_im) +
-                           sum(abs, ps.B_re) + sum(abs, ps.B_im))
+               sparsity * _sparsity_penalty(pm.model, ps)
   end
 end
+
+# L1 regularization used by ComplexAmplitudeMSE; models without sparse
+# coefficients add nothing, and models that have them define their own method
+_sparsity_penalty(model, ps) = 0
