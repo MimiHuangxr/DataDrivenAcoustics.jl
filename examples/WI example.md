@@ -300,23 +300,23 @@ After the programme is run, it displays four figures. The first compares
 Kraken ground truth with the learnable FFP over the full area of interest; the
 measurement positions are marked in black:
 
-<img src="../docs/images/wift-field.png" width="900">
+<img src="../docs/images/wift_field.png" width="900">
 
 The second compares transmission loss at 100 m depth, with the training band
 shaded. The prediction follows Kraken from 1 km to 4 km, far outside the band
 the model was trained on:
 
-<img src="../docs/images/wift-tl.png" width="600">
+<img src="../docs/images/wift_tl.png" width="600">
 
 The third shows the learned kernel, with sharp ridges on Kraken's mode
 wavenumbers, the continuum below them, and the evanescent near field above:
 
-<img src="../docs/images/wift-kernel.png" width="600">
+<img src="../docs/images/wift_kernel.png" width="600">
 
 The fourth shows the inverted water sound speed against the true profile, with
 the recovered seabed sound speed and density ratio in the title:
 
-<img src="../docs/images/wift-ssp.png" width="600">
+<img src="../docs/images/wift_ssp.png" width="600">
 
 ## Notes on the integration
 
