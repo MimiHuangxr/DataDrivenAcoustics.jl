@@ -63,6 +63,10 @@ end
 
 export ModalBasisNN_2D
 
+# L1 regularization on the modal amplitude coefficients, used by ComplexAmplitudeMSE
+_sparsity_penalty(::ModalBasisNN_2D, ps) =
+  sum(abs, ps.A_re) + sum(abs, ps.A_im) + sum(abs, ps.B_re) + sum(abs, ps.B_im)
+
 function ModalBasisNN_2D(D, f; nmodes::Int=30, nhidden::Int=32, cmin=1400.0,
                          cmax=1500.0, cinit=1450.0, ngrid::Int=201, rref=675.0,
                          cref=soundspeed(), seabed=FluidBoundary(2700.0, 5000.0),
