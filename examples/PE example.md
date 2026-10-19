@@ -12,7 +12,8 @@ to predict the field far outside the measurement region and to invert for the
 environment.
 
 The model writes the field as p(r, z) = s ψ(r, z) H₀⁽¹⁾(k₀r) and marches the
-envelope ψ out in range with Collins' split-step Padé method:
+envelope ψ out in range with a Padé-series approximation of the one-way
+equation, each term advanced by a Crank–Nicolson step:
 
     ∂ψ/∂r = ik₀(√(1 + X) − 1) ψ,   √(1 + X) − 1 ≈ Σⱼ aⱼ X / (1 + bⱼ X)
 
@@ -24,11 +25,13 @@ as `WavenumberIntegrationNN_2D`, so the two models can be compared directly;
 unlike wavenumber integration, the PE marches step by step in range, so the
 environment is free to change along the way.
 
-The setup is the same as the wavenumber-integration example: a 200 m deep
-waveguide at 100 Hz over a fluid seabed (sound speed 1650 m/s, density ratio
-1.8), with a source at 40 m. Kraken generates 400 complex-field measurements at
-random positions in a narrow 2.0–2.4 km range band, plus a dense evaluation
-grid covering 1–4 km. The model only ever sees the narrow band.
+The setup is a 200 m deep waveguide at 100 Hz with a summer sound-speed
+profile (a warm mixed layer, a sharp thermocline between 30 and 80 m, and a
+slow increase towards the seabed), over a fluid seabed (sound speed 1650 m/s,
+density ratio 1.8), with a source at 40 m. Kraken generates 400 complex-field
+measurements at random positions in a narrow 2.0–2.4 km range band, plus a
+dense evaluation grid covering 1–4 km. The model only ever sees the narrow
+band, and is never given the sound-speed profile or the seabed.
 
 Training uses L-BFGS, after a coarse scan over the seabed sound speed to start
 in the right basin. Gradients come from a hand-written adjoint of the march,
@@ -58,12 +61,23 @@ gr() #plots backend
 ## 2. Settings
 
 Environment, measurement layout, model bounds and training budget. The true
-seabed values are only used to generate the ground truth and to report the
-inversion error; the model is never given them:
+sound-speed profile and seabed are only used to generate the ground truth and
+to report the inversion error; the model is never given them:
 
 ```julia
 const D = 200.0;        const FREQ = 100.0;     const SOURCE_Z = -40.0
-const C_WATER = 1500.0
+
+#true sound-speed profile (ground truth only): a warm mixed layer, a sharp
+#thermocline between 30 and 80 m, and a slow increase towards the seabed
+const SSP_Z = [0.0, 30.0, 45.0, 60.0, 80.0, 120.0, 200.0]               #depth (m)
+const SSP_C = [1520.0, 1520.0, 1508.0, 1495.0, 1487.0, 1489.0, 1492.0]  #sound speed (m/s)
+
+#the same profile as a plain function, for comparing against the learned one
+function c_true(z)
+    i = clamp(searchsortedlast(SSP_Z, z), 1, length(SSP_Z) - 1)
+    SSP_C[i] + (SSP_C[i+1] - SSP_C[i]) * (z - SSP_Z[i]) / (SSP_Z[i+1] - SSP_Z[i])
+end
+
 const SEABED_C = 1650.0; const SEABED_RHO = 1.8   #ground truth only
 const NPOINTS = 400
 const BAND = (2000.0, 2400.0)                     #measurement ranges (m)
@@ -76,12 +90,13 @@ const CMIN = 1400.0;  const CMAX = 1600.0;  const CINIT = 1500.0
 const CB_SCAN = 1525.0:50.0:2475.0
 const ITERATIONS = 50
 
-#plots
-const FIELD_PLOT_FILE = "pe_field.png"
-const TL_PLOT_FILE    = "pe_tl_100m.png"
-const SSP_PLOT_FILE   = "pe_ssp.png"
+#plots, saved straight into docs/images (run Julia from the repository root)
+const FIELD_PLOT_FILE   = "docs/images/pe-field.png"
+const TL_PLOT_FILE      = "docs/images/pe-tl.png"
+const SSP_PLOT_FILE     = "docs/images/pe-ssp.png"
+const SUMMARY_PLOT_FILE = "docs/images/pe-summary.png"
 
-save_plot(plt, f) = (display(plt); savefig(plt, joinpath(@__DIR__, f)); println("Saved: ", joinpath(@__DIR__, f)))
+save_plot(plt, f) = (display(plt); savefig(plt, f); println("Saved: ", f))
 ```
 
 ## 3. Generate the ground truth
@@ -89,7 +104,8 @@ save_plot(plt, f) = (display(plt); savefig(plt, joinpath(@__DIR__, f)); println(
 One Kraken run gives the 400 complex-field measurements in the band:
 
 ```julia
-env = UnderwaterEnvironment(bathymetry = D, soundspeed = C_WATER,
+true_ssp = SampledField(SSP_C; z = -SSP_Z, interp = Linear())
+env = UnderwaterEnvironment(bathymetry = D, soundspeed = true_ssp,
                             seabed = FluidBoundary(SEABED_RHO * 1000.0, SEABED_C))
 pm = Kraken(env)
 tx = AcousticSource(0.0, SOURCE_Z, FREQ)
@@ -213,8 +229,8 @@ ps.s_re, ps.s_im = real(s), imag(s)
 
 ## 9. Inspect the inverted environment
 
-The seabed and the water sound speed, against the values the model was never
-given:
+The seabed and the water sound-speed profile, against the true values the
+model was never given:
 
 ```julia
 sb = seabed_parameters(model, ps)
@@ -224,12 +240,12 @@ println("seabed α = ", round(sb.α; digits = 3), " dB/λ (true 0)")
 
 z_water = model.zn[1:model.iD]
 c_pred = DataDrivenAcoustics._pe_sound_speed(model, ps)
-println("water c RMSE = ", round(sqrt(mean((c_pred .- C_WATER) .^ 2)); digits = 2), " m/s")
+println("water c RMSE = ", round(sqrt(mean((c_pred .- c_true.(z_water)) .^ 2)); digits = 2), " m/s")
 
-p_ssp = plot(c_pred, -z_water; lw = 2.5, label = "learned c(z)",
-             xlabel = "c (m/s)", ylabel = "z (m)", xlims = (CMIN, CMAX),
+p_ssp = plot(c_true.(z_water), -z_water; lw = 2.5, label = "true c(z)",
+             xlabel = "c (m/s)", ylabel = "z (m)", xlims = (1470, 1540),
              title = "inverted: c_b = $(round(Int, sb.c)) m/s, ρ_b = $(round(sb.ρ; digits = 2))")
-vline!(p_ssp, [C_WATER]; ls = :dash, label = "true ($(Int(C_WATER)) m/s)")
+plot!(p_ssp, c_pred, -z_water; lw = 2.5, ls = :dash, label = "learned c(z)")
 save_plot(p_ssp, SSP_PLOT_FILE)
 ```
 
@@ -242,7 +258,8 @@ save_plot(p_ssp, SSP_PLOT_FILE)
 ## 10. Evaluate the field over the area of interest
 
 Predict over the full 1–4 km grid and compare against Kraken. A single march
-out to 4 km serves every receiver, so the whole grid is one model call:
+out to 4 km serves every receiver, so the whole grid is one model call. The
+black lines mark the training band:
 
 ```julia
 rx = AcousticReceiverGrid2D(AOI_X, AOI_Z)
@@ -261,8 +278,12 @@ println("TL RMSE outside the training band = ",
 
 p1 = plot(rx, tl_true; clim = (50, 90), title = "Kraken")
 scatter!(p1, rxpos[1, :], rxpos[2, :]; markersize = 0.5, color = :black, label = "")
+vline!(p1, collect(BAND); color = :black, lw = 1.2, label = "")
+
 p2 = plot(rx, tl_pred; clim = (50, 90), title = "Learnable PE (Padé, 4 terms)")
 scatter!(p2, rxpos[1, :], rxpos[2, :]; markersize = 0.5, color = :black, label = "")
+vline!(p2, collect(BAND); color = :black, lw = 1.2, label = "")
+
 save_plot(plot(p1, p2; layout = (1, 2), size = (1300, 450), margin = 5 * Plots.mm),
           FIELD_PLOT_FILE)
 ```
@@ -278,36 +299,55 @@ vspan!(p_tl, collect(BAND); alpha = 0.15, color = :gray, label = "training band"
 save_plot(p_tl, TL_PLOT_FILE)
 ```
 
-Done — the three PNGs land next to the script.
+## 11. Summary figure
+
+All of the plots above, combined into a single overview: the field
+comparison, transmission loss at 100 m depth, and the inverted sound-speed
+profile:
+
+```julia
+summary = plot(p1, p2, p_tl, p_ssp; layout = (2, 2), size = (1400, 1000),
+               left_margin = 8 * Plots.mm, bottom_margin = 5 * Plots.mm)
+save_plot(summary, SUMMARY_PLOT_FILE)
+```
+
+Done — the four PNGs land in `docs/images/`.
 
 ## Final Plots
 
-After the programme is run, it displays three figures. The first compares
+After the programme is run, it displays four figures. The first compares
 Kraken ground truth with the learnable PE over the full area of interest; the
-measurement positions are marked in black:
+measurement positions are marked in black, and the black lines mark the
+training band:
 
 <img src="../docs/images/pe-field.png" width="900">
 
 The second compares transmission loss at 100 m depth, with the training band
-shaded. The prediction follows Kraken from 1 km to 4 km, including the deep
-nulls, far outside the band the model was trained on:
+shaded. The prediction follows Kraken from 1 km to 4 km, far outside the band
+the model was trained on:
 
 <img src="../docs/images/pe-tl.png" width="600">
 
-The third shows the inverted water sound speed against the true profile, with
-the recovered seabed sound speed and density ratio in the title:
+The third shows the inverted water sound-speed profile against the true
+thermocline profile, with the recovered seabed sound speed and density ratio
+in the title:
 
 <img src="../docs/images/pe-ssp.png" width="600">
 
+The fourth combines all of the above into a single overview:
+
+<img src="../docs/images/pe-summary.png" width="900">
+
 ## Notes on the method
 
-- **Why split-step Padé rather than split-step Fourier.** Split-step Fourier
-  is the textbook PE solver and is essentially exact in a uniform medium, but
-  a Fourier method cannot represent the density jump and sound-speed step at
-  the seabed; for this waveguide it was 2–6 dB off. The finite-difference
-  Padé march takes the density at half nodes, so the interface is exact, and
-  agrees with a converged wavenumber integral to about 0.4 dB rms from 1 to
-  4 km. Halving the depth step to 0.25 m halves that error at twice the cost.
+- **Why a finite-difference Padé march rather than split-step Fourier.**
+  Split-step Fourier is the textbook PE solver and is essentially exact in a
+  uniform medium, but a Fourier method cannot represent the density jump and
+  sound-speed step at the seabed; for an isovelocity version of this waveguide
+  it was 2–6 dB off. The finite-difference Padé march takes the density at
+  half nodes, so the interface is exact, and agrees with a converged
+  wavenumber integral to about 0.4 dB rms from 1 to 4 km. Halving the depth
+  step to 0.25 m halves that error at twice the cost.
 - **Why the gradient is cheap.** Differentiating the march with forward-mode
   AD costs one march per parameter (or per chunk of parameters). Instead, the
   layer registers a hand-written adjoint: the field is marched forward once,
@@ -322,8 +362,6 @@ the recovered seabed sound speed and density ratio in the title:
 
 ## Publications
 
-- M. D. Collins, "A split-step Padé solution for the parabolic equation
-  method," *J. Acoust. Soc. Am.*, vol. 93, no. 4, pp. 1736–1742, 1993.
 - F. B. Jensen, W. A. Kuperman, M. B. Porter, and H. Schmidt, *Computational
   Ocean Acoustics*, 2nd ed. New York: Springer, 2011. (Chapter 6: parabolic
   equations.)
