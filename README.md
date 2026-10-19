@@ -230,6 +230,14 @@ plot(p1, p2; layout=(1,2), size=(1200,550),
 ```
 <img src="docs/images/ex3.png" width="700">
 
+The ground truth from the original physics-based propagation model, on its own:
+```julia
+x = transmission_loss(pm1, tx, rx)
+plot(rx, x; xlims=(1000,4000), ylims=(-195,-5))
+scatter!([p for p ∈ zip(rxpos[1,:], rxpos[2,:])]; markersize=0.5, color=:black)
+```
+<img src="docs/images/ex3-gt.png" width="700">
+
 The model is able to extrapolate well beyond the area where measurements were made. Its parameters are the environment itself, so the trained model also gives us the inverted seabed:
 ```julia
 seabed_parameters(pm.model, pm.params)    # (c = …, ρ = …, α = …)
@@ -289,6 +297,14 @@ plot(p1, p2; layout=(1,2), size=(1200,550),
      left_margin=8*Plots.mm, bottom_margin=5*Plots.mm)
 ```
 <img src="docs/images/ex4.png" width="700">
+
+The ground truth from the original physics-based propagation model, on its own:
+```julia
+x = transmission_loss(pm1, tx, rx)
+plot(rx, x; xlims=(1000,4000), ylims=(-195,-5))
+scatter!([p for p ∈ zip(rxpos[1,:], rxpos[2,:])]; markersize=0.5, color=:black)
+```
+<img src="docs/images/ex4-gt.png" width="700">
 
 The model is able to extrapolate well beyond the area where measurements were made. Its parameters are the environment itself, so the trained model also gives us the inverted seabed:
 ```julia
