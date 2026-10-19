@@ -10,6 +10,15 @@ This package also builds upon the ideas discussed in our journal paper "Physics-
 
 Conventional acoustic propagation models require accurate environmental knowledge to be available beforehand. While data-driven techniques might allow us to model acoustic propagation without the need for extensive prior environmental knowledge, such techniques tend to be data-hungry. We propose physics-based data-driven acoustic propagation modeling approaches that enable us to train models with only a small amount of data. The proposed modeling frameworks are not only data-efficient, but also offer flexibility to incorporate varying degrees of environmental knowledge, and generalize well to permit extrapolation beyond the area where data were collected.
 
+## Choosing a model
+
+| Model | Best suited for | Range of validity | What it learns | Main limitations |
+|---|---|---|---|---|
+| `RayBasisNN_2D` (RBNN) | Deep and mid-water propagation at higher frequencies, where the field is well described by a few ray paths | Moderate ranges with a small number of boundary bounces | Ray amplitudes and arrivals, fitted to transmission loss | No environmental inversion; ray theory is less accurate at low frequency in shallow water |
+| `ModalBasisNN_2D` (MBNN) | Shallow-water, low-frequency waveguides with a few propagating modes | Far field, beyond a few water depths from the source | Modal wavenumbers and amplitudes, plus the sound-speed profile | Range-independent; omits leaky modes and the near-field continuum; single frequency |
+| `WavenumberIntegrationNN_2D` (WI) | Range-independent waveguides where the full field is wanted, including near the source | All ranges up to the chosen `rmax`, including the near field and steep angles | The environment: sound-speed profile, plus seabed sound speed, density and attenuation | Range-independent; fluid half-space seabed; single frequency and known source depth; slower training (`ForwardDiff`) |
+| `ParabolicEquationNN_2D` (PE) | Mid- to long-range propagation, with fast training | Away from the immediate vicinity of the source, for energy within moderate angles of the horizontal | The environment: sound-speed profile, plus seabed sound speed, density and attenuation | One-way (no backscatter); less accurate very close to the source and at very steep angles; single frequency and known source depth |
+
 > [!NOTE]
 > The API for `DataDrivenAcoustics.jl` changed significantly in `v0.3` to align itself with newer versions of `UnderwaterAcoustics.jl`. Some of the functionality from `v0.2` has not yet been ported to `v0.3`, so if you need older functionality, please use `v0.2`. We will add back much of the functionality and more soon!
 
