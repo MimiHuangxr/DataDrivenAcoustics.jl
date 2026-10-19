@@ -11,13 +11,6 @@ program, on sparse complex-field measurements from a shallow waveguide, and
 uses it both to predict the field far outside the measurement region and to
 invert for the environment.
 
-Unlike `ModalBasisNN_2D`, the model never searches for modes. At every
-horizontal wavenumber kᵣ on an integration grid, its kernel g(kᵣ, z) is the
-Green's function of the depth-separated wave equation for the current learned
-environment, and the field is the wavenumber integral itself:
-
-    p(r, z) = s · ½ Σₘ g(kᵣₘ, z) H₀⁽¹⁾(kᵣₘ r) kᵣₘ Δkᵣ
-
 What is learned is the environment: the water sound speed c(z), the seabed
 sound speed, density ratio and attenuation, plus a complex source factor s.
 Because the kernel is a full Green's function, it contains the trapped modes,
@@ -33,6 +26,7 @@ Training uses L-BFGS with forward-mode gradients, after a coarse scan over the
 seabed sound speed to start in the right basin. The result is evaluated by
 comparing the predicted field against Kraken over the full 1–4 km area, and
 the inverted environment against the true one it was never given.
+
 
 > [!NOTE]
 > The kernel is evaluated independently at several hundred wavenumbers, and
@@ -295,12 +289,10 @@ gdb = 20 .* log10.(abs.(G) ./ maximum(abs, G) .+ 1e-12)
 p_ker = heatmap(model.kr, reverse(-model.zgrid), reverse(gdb; dims = 1); clims = (-60, 0),
                 xlabel = "kᵣ (rad/m)", ylabel = "z (m)", c = :viridis,
                 title = "learned kernel |g(kᵣ, z)| (dB)")
-isempty(kr_true) || vline!(p_ker, kr_true; color = :white, ls = :dash, lw = 0.6,
+isempty(kr_true) || vline!(p_ker, kr_true; color = :red, ls = :dash, lw = 0.6,
                            label = "Kraken modes")
 save_plot(p_ker, KERNEL_PLOT_FILE)
 ```
-
-Done — the four PNGs land next to the script.
 
 ## Final Plots
 
