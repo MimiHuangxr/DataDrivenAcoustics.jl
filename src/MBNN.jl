@@ -17,8 +17,8 @@ const _LOGIT_MARGIN = 1f-4
 logit(p) = log(p / (1 - p))
 
 """
-    ModalBasisNN_2D(D, f; nmodes=30, nhidden=32, cmin=1400.0, cmax=1600.0,
-                    cinit=1450.0, ngrid=201, rref=675.0, cref=soundspeed(),
+    ModalBasisNN_2D(D, f; rref, nmodes=30, nhidden=32, cmin=1400.0, cmax=1600.0,
+                    cref=soundspeed(), cinit=cref, ngrid=201,
                     seabed=FluidBoundary(2700.0, 5000.0))
 
 A 2D modal-basis neural network layer for waveguide depth `D` (m) and source
@@ -30,7 +30,11 @@ Fields:
 - `nmodes`: cap on the number of modes the model can use
 - `nhidden`: hidden width of the sound-speed network (SSNN)
 - `D`: total water depth (m)
-- `rref`: reference range (m)
+- `rref`: reference range (m) for the modal phase; required. Choose a range
+  near the middle of the training receiver ranges. Any value describes the
+  same set of fields, since the phase offset is absorbed into the complex
+  mode amplitudes, but a central value keeps the gradients with respect to
+  kᵣ well scaled
 - `dz`: depth grid spacing (m)
 - `ω`: angular source frequency, ω = 2πf (rad/s)
 - `cmin`, `cmax`: sound-speed bounds (m/s)
@@ -65,9 +69,9 @@ export ModalBasisNN_2D
 _sparsity_penalty(::ModalBasisNN_2D, ps) =
   sum(abs, ps.A_re) + sum(abs, ps.A_im) + sum(abs, ps.B_re) + sum(abs, ps.B_im)
 
-function ModalBasisNN_2D(D, f; nmodes::Int=30, nhidden::Int=32, cmin=1400.0,
-                         cmax=1600.0, cinit=cref, ngrid::Int=201, rref=675.0,
-                         cref=soundspeed(), seabed=FluidBoundary(2700.0, 5000.0),
+function ModalBasisNN_2D(D, f; rref, nmodes::Int=30, nhidden::Int=32, cmin=1400.0,
+                         cmax=1600.0, cref=soundspeed(), cinit=cref, ngrid::Int=201,
+                         seabed=FluidBoundary(2700.0, 5000.0),
                          kr_lo_fraction=0.02, kr_hi_fraction=0.999)
   nmodes > 0 || error("nmodes must be positive")
   nhidden > 0 || error("nhidden must be positive for unknown-SSP training")
@@ -75,6 +79,7 @@ function ModalBasisNN_2D(D, f; nmodes::Int=30, nhidden::Int=32, cmin=1400.0,
   ngrid >= 3 || error("ngrid must be at least 3")
   D32, f32 = Float32(D), Float32(f)
   D32 > 0 || error("D must be positive")
+  Float32(rref) > 0 || error("rref must be positive")
   f32 > 0 || error("f must be positive")
   cmin32, cmax32, cinit32 = Float32(cmin), Float32(cmax), Float32(cinit)
   cmin32 < cmax32 || error("cmin must be smaller than cmax")
