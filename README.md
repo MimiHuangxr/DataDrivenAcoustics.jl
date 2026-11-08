@@ -114,7 +114,7 @@ The model takes the waveguide depth and source frequency, and is wrapped in the 
 ```julia
 pm = DataDrivenPropagationModel(
   ModalBasisNN_2D(200.0, 100.0; nmodes=12, nhidden=16,
-                  cmin=1400.0, cmax=1600.0, cinit=1500.0,
+                  cinit=1500.0,
                   rref=2200.0, seabed=FluidBoundary(1800.0, 1650.0));
   rng=StableRNG(42))
 ```
