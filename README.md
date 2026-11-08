@@ -124,20 +124,19 @@ loss = ComplexAmplitudeMSE(pm, tx, rxs, xfield; sparsity=1f-4)
 ```
 The `sparsity` weight must be scaled to the magnitude of the data — too large a value drives the coefficients to zero and the model predicts a null field.
 
-Training uses the same `fit!`, but with `Zygote` as the automatic differentiation backend, which suits this layer's broadcast-heavy forward pass far better than the `AutoReverseDiff()` default:
+Training uses the the package's own `fit!`:
 ```julia
-using Zygote, ADTypes
-
-DataDrivenAcoustics.fit!(pm, loss, AutoZygote();
+DataDrivenAcoustics.fit!(pm, loss;
   optimizer = Adam(5e-6),           # ADAM with specified learning rate
   maxiters = 5000,                  # minimize for 5000 epochs
   show_progress = 100)              # print progress every 100 epochs
 
-DataDrivenAcoustics.fit!(pm, loss, AutoZygote();
+DataDrivenAcoustics.fit!(pm, loss;
   optimizer = BFGS(),               # BFGS quasi-Newton optimizer
   maxiters = 200,                   # minimize to a maximum of 200 iterations
   show_progress = 1)                # print progress every iteration
 ```
+For faster training, load `Zygote` and `ADTypes` and pass `AutoZygote()` as the third argument to `fit!`.
 
 Prediction and comparison work exactly as before:
 ```julia
