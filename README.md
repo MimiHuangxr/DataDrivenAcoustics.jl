@@ -2,7 +2,7 @@
 
 # DataDrivenAcoustics
 
-This package also provides physics-based data-driven acoustic propagation models for use with UnderwaterAcoustics.jl. Four model families are currently available: a ray-basis neural network (RBNN) for deep and mid-water propagation; a modal-basis neural network (MBNN) for shallow-water waveguides, which additionally inverts for the sound-speed profile; and two full-wave models that learn the environment itself, a learnable wavenumber-integration model (a learnable fast-field program) and a learnable parabolic-equation model, both of which invert for the sound-speed profile and the seabed.
+This package provides physics-based data-driven acoustic propagation models for use with UnderwaterAcoustics.jl. Four model families are currently available: a ray-basis neural network (RBNN) for deep and mid-water propagation; a modal-basis neural network (MBNN) for shallow-water waveguides, which additionally inverts for the sound-speed profile; and two full-wave models that learn the environment itself, a learnable wavenumber-integration model (a learnable fast-field program) and a learnable parabolic-equation model, both of which invert for the sound-speed profile and the seabed.
 
 This package first builds upon the ideas discussed in our journal paper "Data-Aided Underwater Acoustic Ray Propagation Modeling" published on IEEE Journal of Oceanic Engineering (available [online](https://ieeexplore.ieee.org/abstract/document/10224658)). It provides a Ray-basis neural network implementation for use with [`UnderwaterAcoustics.jl`](https://github.com/org-arl/UnderwaterAcoustics.jl).
 
@@ -28,6 +28,8 @@ Conventional acoustic propagation models require accurate environmental knowledg
 julia> # press ]
 pkg> add UnderwaterAcoustics, DataDrivenAcoustics
 ```
+## Usage
+
 We first start by loading some helpful dependencies:
 ```julia
 using UnderwaterAcoustics
@@ -36,7 +38,7 @@ using StableRNGs
 using Plots
 ```
 
-## Ray Models
+### Ray Models
 
 We prepare a dataset by sampling transmission loss at 1000 random locations from a `PekerisRayTracer` propagation model:
 ```julia
@@ -92,7 +94,7 @@ scatter!([p for p ∈ zip(rxpos[1,:], rxpos[2,:])]; markersize=0.5, color=:black
 
 While we see that the match is not perfect, it is pretty impressive given that we have no measurements in the extrapolated area!
 
-## Modal Models
+### Modal Models
 
 For shallow-water waveguides, where the field is well described by a small number of propagating modes, we use `ModalBasisNN_2D` instead. The workflow is the same as above, with three differences: the model is trained on the complex field (magnitude and phase) rather than transmission loss, it is tied to a single frequency fixed at construction time, and it additionally recovers the sound-speed profile.
 
@@ -155,13 +157,6 @@ plot(p1, p2; layout=(1,2), size=(1200,550),
 ```
 <img src="docs/images/ex2.png" width="700">
 
-```julia
-x = transmission_loss(pm1, tx, rx)
-plot(rx, x; xlims=(1000,4000), ylims=(-195,-5))
-scatter!([p for p ∈ zip(rxpos[1,:], rxpos[2,:])]; markersize=0.5, color=:black)
-```
-<img src="docs/images/ex2-gt.png" width="700">
-
 Unlike the ray model, the modal parameters are physically meaningful, so the trained model also gives us the inverted sound-speed profile and the per-mode horizontal wavenumbers:
 ```julia
 julia> modes = arrivals(pm, tx, rx1)   # ModeArrival per mode: m, kᵣ, vₚ = ω/kᵣ
@@ -182,7 +177,7 @@ julia> modes = arrivals(pm, tx, rx1)   # ModeArrival per mode: m, kᵣ, vₚ = �
 
 For a complete example of joint field prediction and sound-speed inversion, see [`examples/`](examples/).
 
-## Wavenumber Integration Models
+### Wavenumber Integration Models
 
 `WavenumberIntegrationNN_2D` is a learnable fast-field program. It learns the environment (the sound-speed profile, plus the seabed sound speed, density and attenuation) and computes the field by wavenumber integration, so it captures the full field, including the near field, and also inverts for the seabed.
 
@@ -252,7 +247,7 @@ seabed_parameters(pm.model, pm.params)    # (c = …, ρ = …, α = …)
 ```
 For this dataset the recovered seabed is close to the true values of c = 1650 m/s, ρ = 1.8 and α = 0. The inverted water sound-speed profile is available from `sound_speed_grid(pm.model, pm.params)`.
 
-## Parabolic Equation Models
+### Parabolic Equation Models
 
 `ParabolicEquationNN_2D` learns the environment (the sound-speed profile, plus the seabed sound speed, density and attenuation) and computes the field by marching a Padé parabolic equation out in range. It also inverts for the seabed.
 
