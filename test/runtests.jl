@@ -47,9 +47,9 @@ DataDrivenAcoustics.fit!(pm, loss; optimizer=BFGS(), maxiters=200)
   @test length(ps.A_re) == 6 && length(ps.ssp.W1) == 12
 
   # learned sound speed and wavenumbers respect their physical bounds
-  c = DataDrivenAcoustics._sound_speed_grid_raw(model, ps)
+  ssp = sound_speed_grid(model, ps)
+  c = [ssp(z) for z ∈ range(0, -model.D; length=201)]
   kr = [m.kᵣ for m in arrivals(pm0, tx, rxs[1])]
-  @test length(c) == 201
   @test all(model.cmin .< c .< model.cmax)
   @test length(kr) == 6
   @test all(model.klo .< kr .< model.khi)
@@ -98,7 +98,8 @@ DataDrivenAcoustics.fit!(pm, loss; optimizer=BFGS(), maxiters=200)
   @test_throws ErrorException acoustic_field(pm, AcousticSource(0.0, -5.0, 300.0), rx)
 
   # the sound speed profile stays physical after training
-  c_trained = DataDrivenAcoustics._sound_speed_grid_raw(pm.model, pm.params)
+  ssp_trained = sound_speed_grid(pm.model, pm.params)
+  c_trained = [ssp_trained(z) for z ∈ range(0, -model.D; length=201)]
   @test all(model.cmin .< c_trained .< model.cmax)
   @test maximum(c_trained) - minimum(c_trained) < 100f0
 
