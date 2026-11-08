@@ -1,20 +1,20 @@
-import ChainRulesCore
-using SpecialFunctions: besselh
-
 # Receivers are processed in chunks of this size, so the Hankel weights
 # (receivers × integration points, complex) stay a few tens of MB even when the
 # layer is evaluated on a large prediction grid.
 const _WI_CHUNK = 2000
 
 """
-    WavenumberIntegrationNN_2D(D, f, zs; nhidden=8, cmin=1400.0, cmax=1600.0,
-                               cinit=1500.0, cbinit=1800.0, ρinit=1.5,
-                               attinit=0.1, ngrid=101, rmax=4000.0,
-                               cref=soundspeed())
+    WavenumberIntegrationNN_2D(D, f, zs; rmax, nhidden=8, cmin=1400.0,
+                               cmax=1600.0, cinit=1500.0, cb_lo=1500.0,
+                               cb_hi=2500.0, cbinit=1800.0, ρ_lo=1.0, ρ_hi=3.0,
+                               ρinit=1.5, att_hi=1.0, attinit=0.1, ngrid=101,
+                               klo_taper=0.02, cref=soundspeed())
 
 A 2D data-aided wavenumber-integration (learnable fast-field program) layer for
 waveguide depth `D` (m), source frequency `f` (Hz) and source depth `zs` (m,
-negative below the surface). Calling the layer with a 3×N input matrix of
+negative below the surface). `rmax` (m) is required: it sets the integration
+grid, and should cover the furthest range you intend to predict at, not just
+the measurement band. Calling the layer with a 3×N input matrix of
 ranges (row 1), depths (row 2, negative below the surface) and wavenumbers
 (row 3) returns a 2×N matrix of real and imaginary acoustic pressure.
 
@@ -38,8 +38,9 @@ c(z) (the same one-hidden-layer ReLU network as `ModalBasisNN_2D`), the seabed
 sound speed, density ratio and attenuation, and s.
 
 Training notes:
-- The depth solver mutates arrays, so use forward-mode AD (`AutoForwardDiff()`);
-  Zygote is not supported.
+- The depth solver updates arrays in place, so `fit!` trains this layer with
+  forward-mode AD (`AutoForwardDiff()`) by default; reverse-mode AD is not
+  supported.
 - Kernel evaluation is threaded over kᵣ; start Julia with `-t auto`.
 - The model assumes e^{-iωt} time dependence (outgoing H₀⁽¹⁾). Data in the
   opposite convention should be conjugated before training.
@@ -66,7 +67,7 @@ integral, so a sharp edge in the integrand leaves an error growing as e^{εr};
 the grid is therefore tapered at both ends (0 → `klo_taper` and ω/cmin → khi).
 Computation is in Float64 for the same reason.
 """
-struct WavenumberIntegrationNN_2D <: LuxCore.AbstractLuxLayer
+struct WavenumberIntegrationNN_2D <: _EnvironmentLayer
   nhidden::Int
   D::Float64
   ω::Float64
@@ -91,14 +92,14 @@ struct WavenumberIntegrationNN_2D <: LuxCore.AbstractLuxLayer
   cref::Float64
 end
 
-export WavenumberIntegrationNN_2D, wavenumber_kernel, seabed_parameters
+export WavenumberIntegrationNN_2D
 
-function WavenumberIntegrationNN_2D(D, f, zs; nhidden::Int=8, cmin=1400.0,
+function WavenumberIntegrationNN_2D(D, f, zs; rmax, nhidden::Int=8, cmin=1400.0,
                                     cmax=1600.0, cinit=1500.0,
                                     cb_lo=1500.0, cb_hi=2500.0, cbinit=1800.0,
                                     ρ_lo=1.0, ρ_hi=3.0, ρinit=1.5,
                                     att_hi=1.0, attinit=0.1,
-                                    ngrid::Int=101, rmax=4000.0, klo_taper=0.02,
+                                    ngrid::Int=101, klo_taper=0.02,
                                     cref=soundspeed())
   nhidden > 0 || error("nhidden must be positive")
   ngrid >= 3 || error("ngrid must be at least 3")
@@ -139,16 +140,15 @@ end
 ## interface methods
 
 function LuxCore.initialparameters(rng::AbstractRNG, l::WavenumberIntegrationNN_2D)
-  bounded(x, lo, hi) = logit(clamp((x - lo) / (hi - lo), _LOGIT_MARGIN, 1 - _LOGIT_MARGIN))
   (
     # one-input, one-hidden-layer ReLU SSNN, as in ModalBasisNN_2D
     ssp = (W1 = 1.5 .* randn(rng, l.nhidden),
            b1 = 0.25 .* randn(rng, l.nhidden),
            W2 = 0.02 .* randn(rng, l.nhidden),
-           b2 = bounded(l.cinit, l.cmin, l.cmax)),
-    seabed = (qc = bounded(l.cbinit, l.cb_lo, l.cb_hi),
-              qρ = bounded(l.ρinit, l.ρ_lo, l.ρ_hi),
-              qα = bounded(l.attinit, 0.0, l.att_hi)),
+           b2 = _bounded_logit(l.cinit, l.cmin, l.cmax)),
+    seabed = (qc = _bounded_logit(l.cbinit, l.cb_lo, l.cb_hi),
+              qρ = _bounded_logit(l.ρinit, l.ρ_lo, l.ρ_hi),
+              qα = _bounded_logit(l.attinit, 0.0, l.att_hi)),
     # complex source factor; 4π converts the −δ/2π source normalisation of the
     # depth equation to a unit-amplitude point source (|p| = 1 at 1 m)
     s_re = 4π,
@@ -166,18 +166,6 @@ to (cmin, cmax).
 """
 sound_speed_grid(l::WavenumberIntegrationNN_2D, ps) =
   SampledField(_ffp_sound_speed(l, ps); z = .-l.zgrid)
-
-"""
-    seabed_parameters(l::WavenumberIntegrationNN_2D, ps)
-
-Return the learned seabed as `(c = …, ρ = …, α = …)`: sound speed (m/s),
-seabed/water density ratio and attenuation (dB/λ).
-"""
-function seabed_parameters(l::WavenumberIntegrationNN_2D, ps)
-  (c = l.cb_lo + (l.cb_hi - l.cb_lo) * sigmoid(ps.seabed.qc),
-   ρ = l.ρ_lo + (l.ρ_hi - l.ρ_lo) * sigmoid(ps.seabed.qρ),
-   α = l.att_hi * sigmoid(ps.seabed.qα))
-end
 
 function (l::WavenumberIntegrationNN_2D)(inp::AbstractMatrix, ps, st::NamedTuple)
   size(inp, 1) == 3 || error("input must have exactly 3 rows [x; z; k]; got $(size(inp, 1))")
@@ -240,40 +228,22 @@ function wavenumber_kernel(l::WavenumberIntegrationNN_2D, ps)
   G
 end
 
+export wavenumber_kernel
+
 ## private methods
 
-# tapered Hankel weights and depth stencil depend only on receiver geometry,
-# never on a trainable parameter, so they are kept off the AD tape
+# field at a chunk of receivers: tapered Hankel weights in range, and linear
+# interpolation of the kernel between the two depth nodes around each receiver
 function _wi_field_chunk(l::WavenumberIntegrationNN_2D, G, r, z)
-  Φ, i0, w = ChainRulesCore.ignore_derivatives() do
-    rr = max.(Float64.(r), Float64(_RANGE_FLOOR))
-    Φ = besselh.(0, 1, rr .* transpose(l.κ)) .* transpose(l.κ .* l.taper) .* (l.Δkr / 2)
-    x = clamp.(-Float64.(z) ./ l.dz, 0, length(l.zgrid) - 1)
-    i0 = min.(floor.(Int, x), length(l.zgrid) - 2) .+ 1
-    Φ, i0, x .- (i0 .- 1)
-  end
+  rr = max.(Float64.(r), Float64(_RANGE_FLOOR))
+  Φ = besselh.(0, 1, rr .* transpose(l.κ)) .* transpose(l.κ .* l.taper) .* (l.Δkr / 2)
+  x = clamp.(-Float64.(z) ./ l.dz, 0, length(l.zgrid) - 1)
+  i0 = min.(floor.(Int, x), length(l.zgrid) - 2) .+ 1
+  w = x .- (i0 .- 1)
   Gr = (1 .- w) .* G[i0, :] .+ w .* G[i0 .+ 1, :]
   vec(sum(Φ .* Gr; dims=2))
 end
 
 # water sound speed on the depth grid from the SSNN, bounded to (cmin, cmax)
-function _ffp_sound_speed(l::WavenumberIntegrationNN_2D, ps)
-  zz = 2 .* (l.zgrid ./ l.D) .- 1
-  h = max.(zz .* ps.ssp.W1' .+ ps.ssp.b1', 0)
-  l.cmin .+ (l.cmax - l.cmin) .* sigmoid.(h * ps.ssp.W2 .+ ps.ssp.b2)
-end
-
-# row 3 carries k = ω/cref, built by acoustic_field from the source frequency;
-# the kernel is tied to the construction-time frequency, so a mismatch is an
-# error rather than something the layer can adapt to
-function _check_frequency(l::WavenumberIntegrationNN_2D, k)
-  ktarget = l.ω / l.cref
-  atol = 1e-3 * ktarget
-  if !all(abs.(k .- ktarget) .<= atol)
-    j = argmax(abs.(k .- ktarget))
-    fq = k[j] * l.cref / 2π
-    error("WavenumberIntegrationNN_2D was built for $(l.ω / 2π) Hz " *
-          "but queried at $(fq) Hz")
-  end
-  nothing
-end
+_ffp_sound_speed(l::WavenumberIntegrationNN_2D, ps) =
+  _ssnn_sound_speed(ps.ssp, 2 .* (l.zgrid ./ l.D) .- 1, l.cmin, l.cmax)
