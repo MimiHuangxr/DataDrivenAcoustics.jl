@@ -17,7 +17,7 @@ const _LOGIT_MARGIN = 1f-4
 logit(p) = log(p / (1 - p))
 
 """
-    ModalBasisNN_2D(D, f; nmodes=30, nhidden=32, cmin=1400.0, cmax=1500.0,
+    ModalBasisNN_2D(D, f; nmodes=30, nhidden=32, cmin=1400.0, cmax=1600.0,
                     cinit=1450.0, ngrid=201, rref=675.0, cref=soundspeed(),
                     seabed=FluidBoundary(2700.0, 5000.0))
 
@@ -66,7 +66,7 @@ _sparsity_penalty(::ModalBasisNN_2D, ps) =
   sum(abs, ps.A_re) + sum(abs, ps.A_im) + sum(abs, ps.B_re) + sum(abs, ps.B_im)
 
 function ModalBasisNN_2D(D, f; nmodes::Int=30, nhidden::Int=32, cmin=1400.0,
-                         cmax=1500.0, cinit=1450.0, ngrid::Int=201, rref=675.0,
+                         cmax=1600.0, cinit=cref, ngrid::Int=201, rref=675.0,
                          cref=soundspeed(), seabed=FluidBoundary(2700.0, 5000.0),
                          kr_lo_fraction=0.02, kr_hi_fraction=0.999)
   nmodes > 0 || error("nmodes must be positive")
