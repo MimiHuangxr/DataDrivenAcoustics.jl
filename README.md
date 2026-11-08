@@ -159,7 +159,7 @@ plot(p1, p2; layout=(1,2), size=(1200,550),
 
 Unlike the ray model, the modal parameters are physically meaningful, so the trained model also gives us the inverted sound-speed profile and the per-mode horizontal wavenumbers:
 ```julia
-julia> modes = arrivals(pm, tx, rx1)   # ModeArrival per mode: m, kᵣ, vₚ = ω/kᵣ
+julia> modes = arrivals(pm, tx, rx1[1])   # ModeArrival per mode: m, kᵣ, vₚ = ω/kᵣ
 12-element Vector{ModeArrival}:
  mode 1:  kᵣ = 0.418527 rad/m, vₚ = 1501.26 m/s
  mode 2:  kᵣ = 0.417767 rad/m, vₚ = 1503.99 m/s
