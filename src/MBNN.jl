@@ -1,6 +1,3 @@
-# Smallest range used in the modal sum; avoids division by zero at r = 0.
-const _RANGE_FLOOR = 1f-3
-
 # Added under the square root for the vertical wavenumber and its evanescent
 # counterpart, so the derivative stays finite at a turning point where
 # s = k² - kᵣ² passes through zero.
@@ -9,12 +6,6 @@ const _TURNING_POINT_EPS = 1f-8
 # Added to kz before dividing, so the 1/√kz mode normalisation stays finite near
 # a turning point.
 const _KZ_FLOOR = 1f-6
-
-# Keeps sigmoid-bounded parameters away from the interval endpoints, where their
-# logit is infinite.
-const _LOGIT_MARGIN = 1f-4
-
-logit(p) = log(p / (1 - p))
 
 """
     ModalBasisNN_2D(D, f; rref, nmodes=30, nhidden=32, cmin=1400.0, cmax=1600.0,
@@ -232,26 +223,6 @@ function _pekeris_kr(l::ModalBasisNN_2D)
   Float32[clamp(Float32(real(m.kᵣ)), l.klo, l.khi) for m in modes]
 end
 
-# row 3 carries k = ω/cref, built by acoustic_field from the source frequency;
-# the modal basis is tied to the construction-time frequency, so a mismatch is
-# an error rather than something the layer can adapt to
-function _check_frequency(l::ModalBasisNN_2D, k)
-  ktarget = l.ω / l.cref
-  atol = 1f-3 * ktarget
-  if !all(abs.(k .- ktarget) .<= atol)
-    j = argmax(abs.(k .- ktarget))
-    fq = Float32(k[j]) * l.cref / (2f0 * Float32(pi))
-    error("ModalBasisNN_2D was built for $(l.ω / (2f0 * Float32(pi))) Hz " *
-          "but queried at $(fq) Hz")
-  end
-  nothing
-end
-
 # raw sound-speed values on the depth grid, before wrapping in SampledField
-function _sound_speed_grid_raw(l::ModalBasisNN_2D, ps)
-  z = reshape(2f0 .* l.ζ .- 1f0, :, 1)
-  W1, b1 = reshape(ps.ssp.W1, 1, :), reshape(ps.ssp.b1, 1, :)
-  h = max.(z .* W1 .+ b1, 0f0)
-  raw = vec(h * ps.ssp.W2 .+ ps.ssp.b2)
-  l.cmin .+ (l.cmax - l.cmin) .* sigmoid.(raw)
-end
+_sound_speed_grid_raw(l::ModalBasisNN_2D, ps) =
+  _ssnn_sound_speed(ps.ssp, 2f0 .* l.ζ .- 1f0, l.cmin, l.cmax)
