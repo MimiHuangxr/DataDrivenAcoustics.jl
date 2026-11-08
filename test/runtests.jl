@@ -3,7 +3,6 @@ using UnderwaterAcoustics
 using StableRNGs
 using Test
 using Lux
-using Zygote, ADTypes
 
 ###Ray Models
 
@@ -42,15 +41,14 @@ DataDrivenAcoustics.fit!(pm, loss; optimizer=BFGS(), maxiters=200)
   # model construction and parameter initialisation
   model = ModalBasisNN_2D(D, freq; nmodes=6, nhidden=12, rref=675.0,
                           cmin=1400.0, cmax=1600.0, cinit=1500.0)
-  ps, st = Lux.setup(rng, model)
+  pm0 = DataDrivenPropagationModel(model; rng)
+  ps, st = pm0.params, NamedTuple()
   @test length(model.ζ) == 201
   @test length(ps.A_re) == 6 && length(ps.ssp.W1) == 12
 
   # learned sound speed and wavenumbers respect their physical bounds
   c = DataDrivenAcoustics._sound_speed_grid_raw(model, ps)
-  # horizontal_wavenumbers no longer exists; arrivals needs a pm,
-  # so build a throwaway one from the model/ps already in scope here
-  kr = [m.kᵣ for m in arrivals(DataDrivenPropagationModel(model, ps, model.cref), tx, rxs[1])]
+  kr = [m.kᵣ for m in arrivals(pm0, tx, rxs[1])]
   @test length(c) == 201
   @test all(model.cmin .< c .< model.cmax)
   @test length(kr) == 6
@@ -82,7 +80,7 @@ DataDrivenAcoustics.fit!(pm, loss; optimizer=BFGS(), maxiters=200)
   pm = DataDrivenPropagationModel(model; rng=StableRNG(42))
   loss = ComplexAmplitudeMSE(pm, tx, rxs, xfield; sparsity=1f-6)   # FieldAmplitudeMSE -> ComplexAmplitudeMSE, xamp -> xfield
   initial_loss = loss(pm.params, nothing)
-  DataDrivenAcoustics.fit!(pm, loss, AutoZygote(); optimizer=Adam(1f-3), maxiters=200)
+  DataDrivenAcoustics.fit!(pm, loss; optimizer=Adam(1f-3), maxiters=200)
   final_loss = loss(pm.params, nothing)
   @test isfinite(initial_loss)
   @test isfinite(final_loss)
