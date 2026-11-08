@@ -1,10 +1,14 @@
 using UnderwaterAcoustics
 import UnderwaterAcoustics: AbstractPropagationModel, AbstractAcousticSource, AbstractAcousticReceiver, ModeArrival
 import ComponentArrays: ComponentArray
-import Optimization: OptimizationFunction, OptimizationProblem, solve, AutoReverseDiff
+import Optimization: OptimizationFunction, OptimizationProblem, solve, AutoReverseDiff, AutoForwardDiff
 import OptimizationOptimisers: Adam
 import OptimizationOptimJL: BFGS, LBFGS
+# AD backends for fit!: ReverseDiff by default, ForwardDiff for the
+# environment layers (WavenumberIntegrationNN_2D, ParabolicEquationNN_2D)
 import ReverseDiff
+import ForwardDiff
+import SpecialFunctions: besselh
 import Random
 import ChainRulesCore
 import Lux
@@ -73,7 +77,11 @@ function UnderwaterAcoustics.arrivals(pm::DataDrivenPropagationModel, tx::Abstra
   [ModeArrival(m, kr[m], missing, missing, l.ω / kr[m]) for m in eachindex(kr)]
 end
 
-function fit!(pm::DataDrivenPropagationModel, loss, adtype=AutoReverseDiff(compile=true); optimizer=Adam(1e-4), maxiters=100, minloss=0, show_progress=0)
+# AD backend that fit! uses for a model unless one is passed explicitly; layers
+# whose forward pass updates arrays in place override this
+_default_adtype(model) = AutoReverseDiff(compile=true)
+
+function fit!(pm::DataDrivenPropagationModel, loss, adtype=_default_adtype(pm.model); optimizer=Adam(1e-4), maxiters=100, minloss=0, show_progress=0)
   ofun = OptimizationFunction(loss, adtype)
   oprob = OptimizationProblem(ofun, pm.params)
   cb = let show_progress = show_progress, minloss = minloss
@@ -125,3 +133,60 @@ end
 # L1 regularization used by ComplexAmplitudeMSE; models without sparse
 # coefficients add nothing, and models that have them define their own method
 _sparsity_penalty(model, ps) = 0
+
+## helpers shared by the physics-based layers
+
+# Smallest range used when evaluating a field; avoids division by zero at r = 0.
+const _RANGE_FLOOR = 1f-3
+
+# Keeps sigmoid-bounded parameters away from the interval endpoints, where their
+# logit is infinite.
+const _LOGIT_MARGIN = 1f-4
+
+logit(p) = log(p / (1 - p))
+
+# unconstrained parameter that sigmoid maps back to x in (lo, hi)
+_bounded_logit(x, lo, hi) = logit(clamp((x - lo) / (hi - lo), _LOGIT_MARGIN, 1 - _LOGIT_MARGIN))
+
+# one-input, one-hidden-layer ReLU sound-speed network (SSNN) evaluated at
+# normalised depths x ∈ [-1, 1], bounded to (cmin, cmax)
+function _ssnn_sound_speed(ssp, x, cmin, cmax)
+  h = max.(x .* reshape(ssp.W1, 1, :) .+ reshape(ssp.b1, 1, :), 0)
+  cmin .+ (cmax - cmin) .* sigmoid.(h * ssp.W2 .+ ssp.b2)
+end
+
+# row 3 carries k = ω/cref, built by acoustic_field from the source frequency;
+# each layer is tied to its construction-time frequency, so a mismatch is an
+# error rather than something the layer can adapt to
+function _check_frequency(l, k)
+  ktarget = l.ω / l.cref
+  atol = 1f-3 * ktarget
+  if !all(abs.(k .- ktarget) .<= atol)
+    j = argmax(abs.(k .- ktarget))
+    error("$(nameof(typeof(l))) was built for $(l.ω / 2π) Hz " *
+          "but queried at $(k[j] * l.cref / 2π) Hz")
+  end
+  nothing
+end
+
+# Layers that learn a water sound-speed profile and a fluid seabed. Their
+# forward passes update arrays in place, so fit! trains them with forward-mode AD.
+abstract type _EnvironmentLayer <: LuxCore.AbstractLuxLayer end
+
+_default_adtype(::_EnvironmentLayer) = AutoForwardDiff()
+
+"""
+    seabed_parameters(l, ps)
+
+Return the seabed learned by a [`WavenumberIntegrationNN_2D`](@ref) or
+[`ParabolicEquationNN_2D`](@ref) layer `l` with parameters `ps`, as
+`(c = …, ρ = …, α = …)`: sound speed (m/s), seabed/water density ratio and
+attenuation (dB/λ).
+"""
+function seabed_parameters(l::_EnvironmentLayer, ps)
+  (c = l.cb_lo + (l.cb_hi - l.cb_lo) * sigmoid(ps.seabed.qc),
+   ρ = l.ρ_lo + (l.ρ_hi - l.ρ_lo) * sigmoid(ps.seabed.qρ),
+   α = l.att_hi * sigmoid(ps.seabed.qα))
+end
+
+export seabed_parameters
