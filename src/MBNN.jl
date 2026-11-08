@@ -1,5 +1,3 @@
-import ChainRulesCore
-
 # Smallest range used in the modal sum; avoids division by zero at r = 0.
 const _RANGE_FLOOR = 1f-3
 
