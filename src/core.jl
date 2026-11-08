@@ -10,6 +10,9 @@ import ReverseDiff
 import ForwardDiff
 import SpecialFunctions: besselh
 import Random
+# ReverseDiff rules that some dependencies register (e.g. for sum(abs2, x))
+# forward to ChainRules rrules, so ChainRules must be loaded for them to work
+import ChainRules
 import ChainRulesCore
 import Lux
 import Lux: LuxCore, sigmoid
