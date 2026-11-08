@@ -137,6 +137,8 @@ function sound_speed_grid(l::ModalBasisNN_2D, ps)
   SampledField(c; z = .-(l.D .* l.ζ))
 end
 
+export sound_speed_grid
+
 function (l::ModalBasisNN_2D)(inp::AbstractMatrix, ps, st::NamedTuple)
   size(inp, 1) == 3 || error("input must have exactly 3 rows [x; z; k]; got $(size(inp, 1))")
   r = @view inp[1, :]
@@ -186,6 +188,8 @@ function depth_interpolation_matrix(l::ModalBasisNN_2D, depths)
   end
   W
 end
+
+export depth_interpolation_matrix
 
 ## private methods
 
