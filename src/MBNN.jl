@@ -160,14 +160,11 @@ function (l::ModalBasisNN_2D)(inp::AbstractMatrix, ps, st::NamedTuple)
   cosφ, sinφ = cos.(phase_z), sin.(phase_z)
   ψre = invsqrt_kz .* ((A_re .+ B_re) .* cosφ .+ (B_im .- A_im) .* sinφ)
   ψim = invsqrt_kz .* ((A_im .+ B_im) .* cosφ .+ (A_re .- B_re) .* sinφ)
-  # depth_interpolation_matrix uses in-place mutation to build a fixed-geometry
-  # matrix that depends only on receiver depths, not on any trainable
-  # parameter; Zygote cannot differentiate through the mutation, so it is
-  # excluded from the AD tape rather than rewritten mutation-free
-  Wdepth = ChainRulesCore.ignore_derivatives() do
-    depth_interpolation_matrix(l, d)
-  end
-  Dre, Dim = Wdepth * ψre, Wdepth * ψim
+  # linear interpolation onto receiver depths: two grid indices and one weight
+  # per receiver, so no dense matrix and no mutation for AD to work around
+  i0, w = _depth_interp_weights(l, d)
+  Dre = (1f0 .- w) .* ψre[i0 .+ 1, :] .+ w .* ψre[i0 .+ 2, :]
+  Dim = (1f0 .- w) .* ψim[i0 .+ 1, :] .+ w .* ψim[i0 .+ 2, :]
   range_phase = (r_safe .- l.rref) .* reshape(kr, 1, :)
   range_scale = 1f0 ./ sqrt.(r_safe .* reshape(kr, 1, :))
   cosρ, sinρ = cos.(range_phase), sin.(range_phase)
@@ -183,20 +180,25 @@ Return a length(depths) × ngrid linear interpolation matrix that evaluates
 functions on the model depth grid at arbitrary depths (e.g. SSP anchors).
 """
 function depth_interpolation_matrix(l::ModalBasisNN_2D, depths)
-  d = Float32.(collect(depths))
-  n = length(l.ζ)
-  W = zeros(Float32, length(d), n)
-  for (row, z) in enumerate(d)
-    x = clamp(z / l.dz, 0f0, Float32(n - 1))
-    i0 = min(floor(Int, x), n - 2)
-    w = x - Float32(i0)
-    W[row, i0 + 1] = 1f0 - w
-    W[row, i0 + 2] = w
+  i0, w = _depth_interp_weights(l, Float32.(collect(depths)))
+  W = zeros(Float32, length(w), length(l.ζ))
+  for row in eachindex(w)
+    W[row, i0[row] + 1] = 1f0 - w[row]
+    W[row, i0[row] + 2] = w[row]
   end
   W
 end
 
 ## private methods
+
+# lower grid index (0-based) and weight for linear interpolation at depths d ≥ 0
+function _depth_interp_weights(l::ModalBasisNN_2D, d)
+  n = length(l.ζ)
+  x = clamp.(d ./ l.dz, 0f0, Float32(n - 1))
+  i0 = min.(floor.(Int, x), n - 2)
+  w = x .- Float32.(i0)
+  i0, w
+end
 
 # cumulative trapezoidal integration along dims=1
 _cumtrapz(dz::Float32, y::AbstractMatrix) =
