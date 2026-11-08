@@ -2,7 +2,6 @@ using DataDrivenAcoustics
 using UnderwaterAcoustics
 using StableRNGs
 using Test
-using Lux
 
 ###Ray Models
 
@@ -39,8 +38,7 @@ DataDrivenAcoustics.fit!(pm, loss; optimizer=BFGS(), maxiters=200)
   xfield = ComplexF32.(acoustic_field(pm1, tx, rxs))   # complex, not abs.() — matches ComplexAmplitudeMSE
 
   # model construction and parameter initialisation
-  model = ModalBasisNN_2D(D, freq; nmodes=6, nhidden=12, rref=675.0,
-                          cmin=1400.0, cmax=1600.0, cinit=1500.0)
+  model = ModalBasisNN_2D(D, freq; nmodes=6, nhidden=12, rref=675.0)
   pm0 = DataDrivenPropagationModel(model; rng)
   ps, st = pm0.params, NamedTuple()
   @test length(model.ζ) == 201
@@ -78,7 +76,7 @@ DataDrivenAcoustics.fit!(pm, loss; optimizer=BFGS(), maxiters=200)
 
   # the model trains through the package's own fit!
   pm = DataDrivenPropagationModel(model; rng=StableRNG(42))
-  loss = ComplexAmplitudeMSE(pm, tx, rxs, xfield; sparsity=1f-6)   # FieldAmplitudeMSE -> ComplexAmplitudeMSE, xamp -> xfield
+  loss = ComplexAmplitudeMSE(pm, tx, rxs, xfield; sparsity=1f-6)
   initial_loss = loss(pm.params, nothing)
   DataDrivenAcoustics.fit!(pm, loss; optimizer=Adam(1f-3), maxiters=200)
   final_loss = loss(pm.params, nothing)
@@ -103,4 +101,56 @@ DataDrivenAcoustics.fit!(pm, loss; optimizer=BFGS(), maxiters=200)
   @test all(model.cmin .< c_trained .< model.cmax)
   @test maximum(c_trained) - minimum(c_trained) < 100f0
 
+end
+
+###Environment Models
+
+# shared dataset: a small Pekeris waveguide, sampled at 50 random positions
+D_env, f_env, zs_env = 50.0, 100.0, -10.0
+env_env = UnderwaterEnvironment(bathymetry=D_env, soundspeed=1500.0,
+                                seabed=FluidBoundary(1800.0, 1650.0))
+tx_env = AcousticSource(0.0, zs_env, f_env)
+rxpos_env = rand(StableRNG(7), 2, 50) .* [100.0, 40.0] .+ [400.0, -45.0]
+rxs_env = [AcousticReceiver(rxpos_env[1,i], rxpos_env[2,i]) for i ∈ 1:size(rxpos_env,2)]
+xfield_env = ComplexF64.(acoustic_field(PekerisModeSolver(env_env), tx_env, rxs_env))
+
+# checks shared by both environment layers; zs are the depths of the SSP grid
+function test_environment_model(model, zs)
+  pm = DataDrivenPropagationModel(model; rng=StableRNG(42))
+
+  # learned sound speed and seabed respect their physical bounds
+  ssp = sound_speed_grid(model, pm.params)
+  c = [ssp(z) for z ∈ zs]
+  @test all(model.cmin .< c .< model.cmax)
+  sb = seabed_parameters(model, pm.params)
+  @test model.cb_lo < sb.c < model.cb_hi
+  @test model.ρ_lo < sb.ρ < model.ρ_hi
+  @test 0 < sb.α < model.att_hi
+
+  # forward pass returns a finite field, and the wrong frequency is a loud error
+  p = acoustic_field(pm, tx_env, rxs_env)
+  @test size(p) == size(rxs_env)
+  @test all(isfinite, p)
+  @test_throws ErrorException acoustic_field(pm, AcousticSource(0.0, zs_env, 2 * f_env), rxs_env[1])
+
+  # the model trains through the package's own fit!, with its default AD
+  loss = ComplexAmplitudeMSE(pm, tx_env, rxs_env, xfield_env)
+  initial_loss = loss(pm.params, nothing)
+  DataDrivenAcoustics.fit!(pm, loss; optimizer=BFGS(), maxiters=3)
+  final_loss = loss(pm.params, nothing)
+  @test isfinite(final_loss)
+  @test final_loss < initial_loss
+end
+
+@testset "Wavenumber integration models" begin
+  model = WavenumberIntegrationNN_2D(D_env, f_env, zs_env; rmax=600.0)
+  @test_throws UndefKeywordError WavenumberIntegrationNN_2D(D_env, f_env, zs_env)
+  test_environment_model(model, .-model.zgrid)
+  @test size(wavenumber_kernel(model, DataDrivenPropagationModel(model).params)) ==
+        (length(model.zgrid), length(model.kr))
+end
+
+@testset "Parabolic equation models" begin
+  model = ParabolicEquationNN_2D(D_env, f_env, zs_env)
+  test_environment_model(model, .-model.zn[1:model.iD])
 end
