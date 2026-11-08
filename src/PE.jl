@@ -1,14 +1,12 @@
-import ChainRulesCore
-using SpecialFunctions: besselh
-
 # dB/λ → imaginary part of k/|k|
 const _PE_DBλ = 1 / (40π * log10(ℯ))
 
 """
     ParabolicEquationNN_2D(D, f, zs; nhidden=8, c0=1500.0, cmin=1400.0,
-                           cmax=1600.0, cinit=1500.0, cbinit=1800.0,
-                           ρinit=1.5, attinit=0.1, dz=0.5, dr=2.0,
-                           zmax=3D, zsponge=2D, sp_att=20.0, npade=4,
+                           cmax=1600.0, cinit=1500.0, cb_lo=1500.0,
+                           cb_hi=2500.0, cbinit=1800.0, ρ_lo=1.0, ρ_hi=3.0,
+                           ρinit=1.5, att_hi=1.0, attinit=0.1, dz=0.5,
+                           dr=2.0, zmax=3D, zsponge=2D, sp_att=20.0, npade=4,
                            cref=soundspeed())
 
 A 2D data-aided parabolic-equation layer for waveguide depth `D` (m), source
@@ -32,10 +30,11 @@ same one-hidden-layer ReLU network as `ModalBasisNN_2D`), the seabed sound
 speed, density ratio and attenuation, and a complex source factor s.
 
 Training notes:
-- Gradients through the march come from a hand-written adjoint, registered as
-  a ChainRules `rrule`, so `AutoZygote()` gives a gradient for about the cost
-  of three marches regardless of the number of parameters. `AutoForwardDiff()`
-  also works, but its cost grows with the number of parameters.
+- The march updates arrays in place, so `fit!` trains this layer with
+  forward-mode AD (`AutoForwardDiff()`) by default; its cost grows with the
+  number of parameters. The march also has a hand-written adjoint, registered
+  as a ChainRules `rrule`, so passing `AutoZygote()` to `fit!` gives a gradient
+  for about the cost of three marches regardless of the number of parameters.
 - The model assumes e^{-iωt} time dependence (outgoing H₀⁽¹⁾). Data in the
   opposite convention should be conjugated before training.
 - The misfit has local minima in the seabed sound speed; scanning `cbinit`
@@ -61,7 +60,7 @@ Fields:
 - `cref`: reference sound speed used to interpret row 3; must match the
   `soundspeed` given to `DataDrivenPropagationModel`
 """
-struct ParabolicEquationNN_2D <: LuxCore.AbstractLuxLayer
+struct ParabolicEquationNN_2D <: _EnvironmentLayer
   nhidden::Int
   D::Float64
   ω::Float64
@@ -89,7 +88,7 @@ struct ParabolicEquationNN_2D <: LuxCore.AbstractLuxLayer
   cref::Float64
 end
 
-export ParabolicEquationNN_2D, seabed_parameters
+export ParabolicEquationNN_2D
 
 function ParabolicEquationNN_2D(D, f, zs; nhidden::Int=8, c0=1500.0,
                                 cmin=1400.0, cmax=1600.0, cinit=1500.0,
@@ -134,16 +133,15 @@ end
 ## interface methods
 
 function LuxCore.initialparameters(rng::AbstractRNG, l::ParabolicEquationNN_2D)
-  bounded(x, lo, hi) = logit(clamp((x - lo) / (hi - lo), _LOGIT_MARGIN, 1 - _LOGIT_MARGIN))
   (
     # one-input, one-hidden-layer ReLU SSNN, as in ModalBasisNN_2D
     ssp = (W1 = 1.5 .* randn(rng, l.nhidden),
            b1 = 0.25 .* randn(rng, l.nhidden),
            W2 = 0.02 .* randn(rng, l.nhidden),
-           b2 = bounded(l.cinit, l.cmin, l.cmax)),
-    seabed = (qc = bounded(l.cbinit, l.cb_lo, l.cb_hi),
-              qρ = bounded(l.ρinit, l.ρ_lo, l.ρ_hi),
-              qα = bounded(l.attinit, 0.0, l.att_hi)),
+           b2 = _bounded_logit(l.cinit, l.cmin, l.cmax)),
+    seabed = (qc = _bounded_logit(l.cbinit, l.cb_lo, l.cb_hi),
+              qρ = _bounded_logit(l.ρinit, l.ρ_lo, l.ρ_hi),
+              qα = _bounded_logit(l.attinit, 0.0, l.att_hi)),
     # complex source factor, absorbing the unknown source level and phase
     s_re = 1.0,
     s_im = 0.0,
@@ -161,18 +159,6 @@ bounded to (cmin, cmax).
 sound_speed_grid(l::ParabolicEquationNN_2D, ps) =
   SampledField(_pe_sound_speed(l, ps); z = .-l.zn[1:l.iD])
 
-"""
-    seabed_parameters(l::ParabolicEquationNN_2D, ps)
-
-Return the learned seabed as `(c = …, ρ = …, α = …)`: sound speed (m/s),
-seabed/water density ratio and attenuation (dB/λ).
-"""
-function seabed_parameters(l::ParabolicEquationNN_2D, ps)
-  (c = l.cb_lo + (l.cb_hi - l.cb_lo) * sigmoid(ps.seabed.qc),
-   ρ = l.ρ_lo + (l.ρ_hi - l.ρ_lo) * sigmoid(ps.seabed.qρ),
-   α = l.att_hi * sigmoid(ps.seabed.qα))
-end
-
 function (l::ParabolicEquationNN_2D)(inp::AbstractMatrix, ps, st::NamedTuple)
   size(inp, 1) == 3 || error("input must have exactly 3 rows [x; z; k]; got $(size(inp, 1))")
   r = Float64.(inp[1, :])
@@ -182,6 +168,8 @@ function (l::ParabolicEquationNN_2D)(inp::AbstractMatrix, ps, st::NamedTuple)
   _check_frequency(l, @view inp[3, :])
   lo, di, up = _pe_operator(l, ps)
   ψ = _pe_march(l, lo, di, up, r, z)
+  # Zygote cannot differentiate besselh; r carries no gradient, so keeping this
+  # off the tape lets the optional AutoZygote() path through the adjoint work
   H = ChainRulesCore.ignore_derivatives() do
     besselh.(0, 1, l.k0 .* max.(r, Float64(_RANGE_FLOOR)))
   end
@@ -192,11 +180,8 @@ end
 ## private methods
 
 # water sound speed on the water nodes from the SSNN, bounded to (cmin, cmax)
-function _pe_sound_speed(l::ParabolicEquationNN_2D, ps)
-  zz = 2 .* (l.zn[1:l.iD] ./ l.D) .- 1
-  h = max.(zz .* ps.ssp.W1' .+ ps.ssp.b1', 0)
-  l.cmin .+ (l.cmax - l.cmin) .* sigmoid.(h * ps.ssp.W2 .+ ps.ssp.b2)
-end
+_pe_sound_speed(l::ParabolicEquationNN_2D, ps) =
+  _ssnn_sound_speed(ps.ssp, 2 .* (l.zn[1:l.iD] ./ l.D) .- 1, l.cmin, l.cmax)
 
 # Tridiagonal X = (lo, di, up): lo[i] multiplies ψ[i-1], di[i] ψ[i], up[i] ψ[i+1].
 # Written without mutation so reverse-mode AD can pass through it. With the
@@ -367,19 +352,4 @@ function _trimul!(o, l, d, u, v)
     o[i] = acc
   end
   o
-end
-
-# row 3 carries k = ω/cref, built by acoustic_field from the source frequency;
-# the march is tied to the construction-time frequency, so a mismatch is an
-# error rather than something the layer can adapt to
-function _check_frequency(l::ParabolicEquationNN_2D, k)
-  ktarget = l.ω / l.cref
-  atol = 1e-3 * ktarget
-  if !all(abs.(k .- ktarget) .<= atol)
-    j = argmax(abs.(k .- ktarget))
-    fq = k[j] * l.cref / 2π
-    error("ParabolicEquationNN_2D was built for $(l.ω / 2π) Hz " *
-          "but queried at $(fq) Hz")
-  end
-  nothing
 end
