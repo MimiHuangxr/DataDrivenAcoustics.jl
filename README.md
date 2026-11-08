@@ -28,6 +28,7 @@ Conventional acoustic propagation models require accurate environmental knowledg
 julia> # press ]
 pkg> add UnderwaterAcoustics, DataDrivenAcoustics
 ```
+
 ## Usage
 
 We first start by loading some helpful dependencies:
@@ -38,7 +39,7 @@ using StableRNGs
 using Plots
 ```
 
-### Ray Models
+### Ray models
 
 We prepare a dataset by sampling transmission loss at 1000 random locations from a `PekerisRayTracer` propagation model:
 ```julia
@@ -94,7 +95,7 @@ scatter!([p for p ∈ zip(rxpos[1,:], rxpos[2,:])]; markersize=0.5, color=:black
 
 While we see that the match is not perfect, it is pretty impressive given that we have no measurements in the extrapolated area!
 
-### Modal Models
+### Modal models
 
 For shallow-water waveguides, where the field is well described by a small number of propagating modes, we use `ModalBasisNN_2D` instead. The workflow is the same as above, with three differences: the model is trained on the complex field (magnitude and phase) rather than transmission loss, it is tied to a single frequency fixed at construction time, and it additionally recovers the sound-speed profile.
 
@@ -113,12 +114,11 @@ This gives complex field samples in a 2.0 to 2.4 km range and 15 to 185 m depth,
 The model takes the waveguide depth and source frequency, and is wrapped in the same framework:
 ```julia
 pm = DataDrivenPropagationModel(
-  ModalBasisNN_2D(200.0, 100.0; nmodes=12, nhidden=16,
-                  cinit=1500.0,
+  ModalBasisNN_2D(200.0, 100.0; nmodes=12, nhidden=16, cinit=1500.0,
                   rref=2200.0, seabed=FluidBoundary(1800.0, 1650.0));
   rng=StableRNG(42))
 ```
-`cmin` and `cmax` must bracket the true sound speed, since the learned c(z) is squashed into that interval and cannot reach either endpoint. `rref` should sit inside the measurement band. `seabed` should match the ground-truth environment where possible — it's only used to warm-start the initial wavenumber guess, but a mismatched seabed can slow convergence noticeably.
+The learned c(z) is squashed into (`cmin`, `cmax`), 1400–1600 m/s by default, and cannot reach either endpoint, so pass other bounds if the true sound speed may lie outside that range. `rref` is required; choose a range near the middle of the measurement band. `seabed` should match the ground-truth environment where possible — it's only used to warm-start the initial wavenumber guess, but a mismatched seabed can slow convergence noticeably.
 
 The loss measures complex field error with L1 regularization on the modal coefficients:
 ```julia
@@ -126,7 +126,7 @@ loss = ComplexAmplitudeMSE(pm, tx, rxs, xfield; sparsity=1f-4)
 ```
 The `sparsity` weight must be scaled to the magnitude of the data — too large a value drives the coefficients to zero and the model predicts a null field.
 
-Training uses the the package's own `fit!`:
+Training uses the package's own `fit!`:
 ```julia
 DataDrivenAcoustics.fit!(pm, loss;
   optimizer = Adam(5e-6),           # ADAM with specified learning rate
@@ -159,7 +159,7 @@ plot(p1, p2; layout=(1,2), size=(1200,550),
 
 Unlike the ray model, the modal parameters are physically meaningful, so the trained model also gives us the inverted sound-speed profile and the per-mode horizontal wavenumbers:
 ```julia
-julia> modes = arrivals(pm, tx, rx1[1])   # ModeArrival per mode: m, kᵣ, vₚ = ω/kᵣ
+julia> modes = arrivals(pm, tx, rxs[1])   # ModeArrival per mode: m, kᵣ, vₚ = ω/kᵣ
 12-element Vector{ModeArrival}:
  mode 1:  kᵣ = 0.418527 rad/m, vₚ = 1501.26 m/s
  mode 2:  kᵣ = 0.417767 rad/m, vₚ = 1503.99 m/s
@@ -177,7 +177,7 @@ julia> modes = arrivals(pm, tx, rx1[1])   # ModeArrival per mode: m, kᵣ, vₚ 
 
 For a complete example of joint field prediction and sound-speed inversion, see [`examples/`](examples/).
 
-### Wavenumber Integration Models
+### Wavenumber integration models
 
 `WavenumberIntegrationNN_2D` is a learnable fast-field program. It learns the environment (the sound-speed profile, plus the seabed sound speed, density and attenuation) and computes the field by wavenumber integration, so it captures the full field, including the near field, and also inverts for the seabed.
 
@@ -198,18 +198,15 @@ This gives complex field samples in a 2.0 to 2.4 km range and 15 to 185 m depth,
 The model takes the waveguide depth, source frequency and source depth. `rmax` should cover the furthest range you intend to predict at:
 ```julia
 pm = DataDrivenPropagationModel(
-  WavenumberIntegrationNN_2D(200.0, 100.0, -40.0;
-                             cmin=1400.0, cmax=1600.0, cinit=1500.0, rmax=4000.0);
+  WavenumberIntegrationNN_2D(200.0, 100.0, -40.0; rmax=4000.0);
   rng=StableRNG(42))
 loss = ComplexAmplitudeMSE(pm, tx, rxs, xfield)
 ```
-`cmin` and `cmax` must bracket the true sound speed, since the learned c(z) is squashed into that interval and cannot reach either endpoint.
+The learned c(z) is squashed into (`cmin`, `cmax`), 1400–1600 m/s by default, and cannot reach either endpoint, so pass other bounds if the true sound speed may lie outside that range.
 
-The kernel's depth solver updates arrays in place, so training uses `ForwardDiff`. Start Julia with `-t auto`, as the kernel is evaluated in parallel:
+Training uses the package's own `fit!`, which picks forward-mode AD for this model, since the kernel's depth solver updates arrays in place. Start Julia with `-t auto`, as the kernel is evaluated in parallel:
 ```julia
-using ForwardDiff, ADTypes
-
-DataDrivenAcoustics.fit!(pm, loss, AutoForwardDiff();
+DataDrivenAcoustics.fit!(pm, loss;
   optimizer = BFGS(),               # BFGS quasi-Newton optimizer
   maxiters = 50,                    # minimize to a maximum of 50 iterations
   show_progress = 5)                # print progress every 5 iterations
@@ -233,21 +230,13 @@ plot(p1, p2; layout=(1,2), size=(1200,550),
 ```
 <img src="docs/images/ex3.png" width="700">
 
-The ground truth from the original physics-based propagation model, on its own:
-```julia
-x = transmission_loss(pm1, tx, rx)
-plot(rx, x; xlims=(1000,4000), ylims=(-195,-5))
-scatter!([p for p ∈ zip(rxpos[1,:], rxpos[2,:])]; markersize=0.5, color=:black)
-```
-<img src="docs/images/ex3-gt.png" width="700">
-
 The model is able to extrapolate well beyond the area where measurements were made. Its parameters are the environment itself, so the trained model also gives us the inverted seabed:
 ```julia
 seabed_parameters(pm.model, pm.params)    # (c = …, ρ = …, α = …)
 ```
 For this dataset the recovered seabed is close to the true values of c = 1650 m/s, ρ = 1.8 and α = 0. The inverted water sound-speed profile is available from `sound_speed_grid(pm.model, pm.params)`.
 
-### Parabolic Equation Models
+### Parabolic equation models
 
 `ParabolicEquationNN_2D` learns the environment (the sound-speed profile, plus the seabed sound speed, density and attenuation) and computes the field by marching a Padé parabolic equation out in range. It also inverts for the seabed.
 
@@ -268,18 +257,15 @@ This gives complex field samples in a 2.0 to 2.4 km range and 15 to 185 m depth,
 The model takes the waveguide depth, source frequency and source depth:
 ```julia
 pm = DataDrivenPropagationModel(
-  ParabolicEquationNN_2D(200.0, 100.0, -40.0;
-                         cmin=1400.0, cmax=1600.0, cinit=1500.0);
+  ParabolicEquationNN_2D(200.0, 100.0, -40.0);
   rng=StableRNG(42))
 loss = ComplexAmplitudeMSE(pm, tx, rxs, xfield)
 ```
-`cmin` and `cmax` must bracket the true sound speed, since the learned c(z) is squashed into that interval and cannot reach either endpoint.
+The learned c(z) is squashed into (`cmin`, `cmax`), 1400–1600 m/s by default, and cannot reach either endpoint, so pass other bounds if the true sound speed may lie outside that range.
 
-The layer differentiates its march with a built-in adjoint, so `Zygote` gives a gradient for about the cost of three marches:
+Training uses the package's own `fit!`:
 ```julia
-using Zygote, ADTypes
-
-DataDrivenAcoustics.fit!(pm, loss, AutoZygote();
+DataDrivenAcoustics.fit!(pm, loss;
   optimizer = BFGS(),               # BFGS quasi-Newton optimizer
   maxiters = 50,                    # minimize to a maximum of 50 iterations
   show_progress = 5)                # print progress every 5 iterations
@@ -301,9 +287,7 @@ plot(p1, p2; layout=(1,2), size=(1200,550),
 ```
 <img src="docs/images/ex4.png" width="700">
 
-The ground truth is the same `Kraken` field used in the [Wavenumber Integration Models](#wavenumber-integration-models) example, since both use the same environment, source and measurement locations:
-
-<img src="docs/images/ex3-gt.png" width="700">
+For faster training, load `Zygote` and `ADTypes` and pass `AutoZygote()` as the third argument to `fit!`; the layer's built-in adjoint then gives a gradient for about the cost of three marches.
 
 The model is able to extrapolate well beyond the area where measurements were made. Its parameters are the environment itself, so the trained model also gives us the inverted seabed:
 ```julia
